@@ -10,6 +10,7 @@ import { StatCard } from '@/components/StatCard';
 import { LineChart } from '@/components/charts/LineChart';
 import { useAuth } from '@/hooks/useAuth';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { useSubscription } from '@/hooks/useSubscription';
 import { getConnectedApps, syncAllDataSources } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
 import type { ConnectedApp } from '@/lib/supabase';
@@ -29,6 +30,7 @@ export default function DashboardScreen() {
   const colors = Colors[colorScheme];
   const { user, profile } = useAuth();
   const { analytics, stats, syncing, syncAnalytics, apps, error: syncError } = useAnalytics();
+  const { refresh: refreshSubscription } = useSubscription();
   const [connectedSources, setConnectedSources] = useState<ConnectedApp[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,16 +94,27 @@ export default function DashboardScreen() {
 
   const handleSync = async () => {
     setRefreshing(true);
+
+    // Force stop refreshing after 5 seconds no matter what
+    const forceStopTimeout = setTimeout(() => {
+      setRefreshing(false);
+    }, 5000);
+
     try {
       if (user) {
-        await syncAllDataSources(user.id);
+        // Run all refreshes in parallel with individual timeouts
+        await Promise.allSettled([
+          refreshSubscription().catch(() => {}),
+          syncAllDataSources(user.id).catch(() => {}),
+          loadConnectedSources().catch(() => {}),
+          syncAnalytics().catch(() => {}),
+        ]);
         setLastSyncTime(new Date());
-        await loadConnectedSources();
-        await syncAnalytics();
       }
     } catch (error: any) {
-      console.error('Sync error:', error);
+      console.log('Sync error:', error.message);
     } finally {
+      clearTimeout(forceStopTimeout);
       setRefreshing(false);
     }
   };

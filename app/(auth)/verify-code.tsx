@@ -60,11 +60,29 @@ export default function VerifyCodeScreen() {
 
     setVerifying(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
+      // Try verifying with 'email' type first, then 'signup' as fallback
+      let data, error;
+
+      // First try 'email' type (for sign-in)
+      const result1 = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: 'email',
       });
+
+      if (result1.error) {
+        // Try 'signup' type as fallback (for new accounts)
+        const result2 = await supabase.auth.verifyOtp({
+          email,
+          token: code,
+          type: 'signup',
+        });
+        data = result2.data;
+        error = result2.error;
+      } else {
+        data = result1.data;
+        error = result1.error;
+      }
 
       if (error) {
         shake();
@@ -72,7 +90,7 @@ export default function VerifyCodeScreen() {
         throw error;
       }
 
-      if (data.session && data.user) {
+      if (data?.session && data?.user) {
         // Check if user has completed onboarding
         try {
           const profile = await getProfile(data.user.id);
@@ -81,14 +99,20 @@ export default function VerifyCodeScreen() {
           } else {
             router.replace('/(onboarding)/company');
           }
-        } catch {
+        } catch (profileError) {
           // No profile yet, go to onboarding
           router.replace('/(onboarding)/company');
         }
+      } else {
+        // Session created but no user data - still try to navigate
+        router.replace('/(onboarding)/company');
       }
     } catch (error: any) {
+      console.error('Verification error:', error);
+      shake();
+      setCode('');
       Alert.alert(
-        'Invalid Code',
+        'Verification Failed',
         error.message || 'The code you entered is incorrect or has expired. Please try again.',
         [{ text: 'OK', onPress: () => inputRef.current?.focus() }]
       );

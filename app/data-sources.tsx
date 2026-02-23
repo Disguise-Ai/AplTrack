@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/hooks/useAuth';
-import { getConnectedApps, connectApp, disconnectApp, updateAppCredentials } from '@/lib/api';
+import { getConnectedApps, connectApp, disconnectApp, updateAppCredentials, syncAllDataSources } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
 import type { ConnectedApp } from '@/lib/supabase';
 
@@ -243,10 +243,25 @@ export default function DataSourcesScreen() {
         app_store_app_id: trimmedCredentials.app_id || trimmedCredentials.project_id || trimmedCredentials.app_token || '',
       });
       await loadConnectedApps();
+
+      // Auto-sync data after connecting
+      Alert.alert(
+        'Connected!',
+        `${selectedSource.name} connected successfully. Syncing your data now...`,
+        [{ text: 'OK' }]
+      );
       closeModal();
-      Alert.alert('Connected!', `${selectedSource.name} connected successfully. Pull down on Dashboard to sync data.`);
+
+      // Trigger sync in background
+      syncAllDataSources(user.id).then(() => {
+        Alert.alert('Sync Complete', 'Your data has been synced. Check the Dashboard!');
+      }).catch((err) => {
+        console.log('Auto-sync error:', err);
+      });
+
     } catch (error: any) {
-      Alert.alert('Connection Failed', error.message || 'Please check your credentials');
+      console.error('Connection error:', error);
+      Alert.alert('Connection Failed', error.message || 'Please check your credentials and try again.');
     } finally {
       setLoading(false);
     }

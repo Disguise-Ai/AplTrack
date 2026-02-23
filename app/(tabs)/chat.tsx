@@ -1,9 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, useColorScheme, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  useColorScheme,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Animated,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
 import { ChatMessage } from '@/components/ChatMessage';
 import { LockedFeature } from '@/components/Paywall';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,6 +22,45 @@ import type { ChatMessage as ChatMessageType } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
 
 type BotType = 'marketing' | 'sales';
+
+function TypingIndicator() {
+  const colorScheme = useColorScheme() ?? 'dark';
+  const colors = Colors[colorScheme];
+  const [dot1] = useState(new Animated.Value(0));
+  const [dot2] = useState(new Animated.Value(0));
+  const [dot3] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ])
+      ).start();
+    };
+    animate(dot1, 0);
+    animate(dot2, 150);
+    animate(dot3, 300);
+  }, []);
+
+  const dotStyle = (anim: Animated.Value) => ({
+    opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
+    transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) }],
+  });
+
+  return (
+    <View style={[styles.typingBubble, { backgroundColor: colors.card }]}>
+      {[dot1, dot2, dot3].map((dot, i) => (
+        <Animated.View
+          key={i}
+          style={[styles.typingDot, { backgroundColor: colors.textSecondary }, dotStyle(dot)]}
+        />
+      ))}
+    </View>
+  );
+}
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -58,16 +107,20 @@ export default function ChatScreen() {
       const savedAiMsg = await saveChatMessage(user.id, activeBot, aiResponse, false);
       setMessages((prev) => [...prev, savedAiMsg]);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
-      setMessages((prev) => [...prev, {
-        id: 'error',
-        user_id: user.id,
-        bot_type: activeBot,
-        message: 'Sorry, I encountered an error. Please try again.',
-        is_user: false,
-        created_at: new Date().toISOString()
-      }]);
+      const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.';
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          user_id: user.id,
+          bot_type: activeBot,
+          message: errorMessage,
+          is_user: false,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setSending(false);
     }
@@ -78,15 +131,17 @@ export default function ChatScreen() {
 
   const botInfo = {
     marketing: {
-      name: 'Marketing Bot',
-      icon: 'megaphone-outline' as const,
-      description: 'ASO, social media, growth hacking, content marketing'
+      name: 'Marketing',
+      fullName: 'Marketing Assistant',
+      icon: 'megaphone' as const,
+      description: 'ASO, social media, growth hacking',
     },
     sales: {
-      name: 'Sales Bot',
-      icon: 'cash-outline' as const,
-      description: 'Pricing, conversions, upsells, churn reduction'
-    }
+      name: 'Sales',
+      fullName: 'Sales Assistant',
+      icon: 'cash' as const,
+      description: 'Pricing, conversions, retention',
+    },
   };
 
   return (
@@ -97,54 +152,52 @@ export default function ChatScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}
         >
-          <View style={styles.header}>
-            <Text variant="title" weight="bold">AI Chat</Text>
-            <Text variant="caption" color="secondary">Get personalized marketing & sales advice</Text>
-          </View>
-
-          {/* Bot Selector */}
-          <View style={styles.botSelector}>
-            {(['marketing', 'sales'] as const).map((bot) => (
-              <TouchableOpacity
-                key={bot}
-                style={[
-                  styles.botTab,
-                  {
-                    backgroundColor: activeBot === bot ? colors.primary + '15' : 'transparent',
-                    borderColor: activeBot === bot ? colors.primary : colors.border
-                  }
-                ]}
-                onPress={() => setActiveBot(bot)}
-              >
-                <Ionicons
-                  name={botInfo[bot].icon}
-                  size={20}
-                  color={activeBot === bot ? colors.primary : colors.textSecondary}
-                />
-                <Text
-                  variant="label"
-                  weight={activeBot === bot ? 'semibold' : 'regular'}
-                  color={activeBot === bot ? 'accent' : 'secondary'}
-                  style={styles.botTabText}
-                >
-                  {botInfo[bot].name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Bot Info Card */}
-          <Card style={styles.botInfoCard}>
-            <View style={styles.botInfoContent}>
-              <View style={[styles.botAvatar, { backgroundColor: colors.primary }]}>
-                <Ionicons name={botInfo[activeBot].icon} size={24} color="#FFFFFF" />
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <View style={styles.headerContent}>
+              <View style={[styles.headerAvatar, { backgroundColor: '#A78BFA' }]}>
+                <Ionicons name={botInfo[activeBot].icon} size={20} color="#FFFFFF" />
               </View>
-              <View style={styles.botInfoText}>
-                <Text variant="label" weight="semibold">{botInfo[activeBot].name}</Text>
-                <Text variant="caption" color="secondary">{botInfo[activeBot].description}</Text>
+              <View style={styles.headerText}>
+                <Text variant="label" weight="semibold">
+                  {botInfo[activeBot].fullName}
+                </Text>
+                <Text variant="caption" color="secondary">
+                  {botInfo[activeBot].description}
+                </Text>
               </View>
             </View>
-          </Card>
+
+            {/* Bot Toggle */}
+            <View style={[styles.botToggle, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
+              {(['marketing', 'sales'] as const).map((bot) => (
+                <TouchableOpacity
+                  key={bot}
+                  style={[
+                    styles.botToggleButton,
+                    activeBot === bot && { backgroundColor: '#A78BFA' },
+                  ]}
+                  onPress={() => setActiveBot(bot)}
+                >
+                  <Ionicons
+                    name={botInfo[bot].icon}
+                    size={16}
+                    color={activeBot === bot ? '#FFFFFF' : colors.textSecondary}
+                  />
+                  <Text
+                    variant="caption"
+                    weight="semibold"
+                    style={{
+                      marginLeft: 4,
+                      color: activeBot === bot ? '#FFFFFF' : colors.textSecondary,
+                    }}
+                  >
+                    {botInfo[bot].name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           {/* Messages */}
           <ScrollView
@@ -152,6 +205,7 @@ export default function ChatScreen() {
             style={styles.messagesContainer}
             contentContainerStyle={styles.messagesContent}
             onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            keyboardShouldPersistTaps="handled"
           >
             {loading ? (
               <View style={styles.loadingContainer}>
@@ -159,62 +213,87 @@ export default function ChatScreen() {
               </View>
             ) : messages.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="chatbubbles-outline" size={48} color={colors.textSecondary} />
-                <Text variant="body" color="secondary" align="center" style={styles.emptyText}>
-                  Start a conversation with your AI {activeBot} assistant
+                <View style={[styles.emptyIcon, { backgroundColor: '#A78BFA' + '20' }]}>
+                  <Ionicons name={botInfo[activeBot].icon} size={32} color="#A78BFA" />
+                </View>
+                <Text variant="body" weight="semibold" style={styles.emptyTitle}>
+                  Start a conversation
+                </Text>
+                <Text variant="caption" color="secondary" align="center" style={styles.emptyText}>
+                  Ask me anything about {activeBot === 'marketing' ? 'marketing your app' : 'sales strategies'}
                 </Text>
                 <View style={styles.suggestions}>
                   {activeBot === 'marketing' ? (
                     <>
-                      <SuggestionChip text="How can I improve my ASO?" onPress={() => setInputText('How can I improve my ASO?')} />
-                      <SuggestionChip text="Best social media strategies" onPress={() => setInputText('What are the best social media strategies for my app?')} />
-                      <SuggestionChip text="Content marketing tips" onPress={() => setInputText('Give me content marketing tips for my app')} />
+                      <SuggestionChip text="Improve my ASO" onPress={() => setInputText('How can I improve my ASO?')} />
+                      <SuggestionChip text="Social media tips" onPress={() => setInputText('What social media strategies work best?')} />
+                      <SuggestionChip text="Growth hacking" onPress={() => setInputText('Give me growth hacking ideas')} />
                     </>
                   ) : (
                     <>
-                      <SuggestionChip text="How should I price my app?" onPress={() => setInputText('How should I price my app?')} />
-                      <SuggestionChip text="How to reduce churn?" onPress={() => setInputText('What are the best ways to reduce churn?')} />
-                      <SuggestionChip text="Upselling strategies" onPress={() => setInputText('What upselling strategies work best for apps?')} />
+                      <SuggestionChip text="Pricing strategy" onPress={() => setInputText('How should I price my app?')} />
+                      <SuggestionChip text="Reduce churn" onPress={() => setInputText('How can I reduce churn?')} />
+                      <SuggestionChip text="Upsell tactics" onPress={() => setInputText('What upselling tactics work best?')} />
                     </>
                   )}
                 </View>
               </View>
             ) : (
-              messages.map((msg) => (
-                <ChatMessage
-                  key={msg.id}
-                  message={msg.message}
-                  isUser={msg.is_user}
-                  timestamp={formatTime(msg.created_at)}
-                />
-              ))
+              <>
+                {messages.map((msg, index) => {
+                  const prevMsg = messages[index - 1];
+                  const showTail = !prevMsg || prevMsg.is_user !== msg.is_user;
+                  const showTimestamp = index === messages.length - 1 ||
+                    (messages[index + 1] && messages[index + 1].is_user !== msg.is_user);
+
+                  return (
+                    <ChatMessage
+                      key={msg.id}
+                      message={msg.message}
+                      isUser={msg.is_user}
+                      timestamp={showTimestamp ? formatTime(msg.created_at) : undefined}
+                      showTail={showTail}
+                    />
+                  );
+                })}
+              </>
             )}
             {sending && (
-              <View style={styles.typingIndicator}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text variant="caption" color="secondary" style={{ marginLeft: 8 }}>Thinking...</Text>
+              <View style={styles.typingContainer}>
+                <TypingIndicator />
               </View>
             )}
           </ScrollView>
 
-          {/* Input */}
-          <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder={`Ask the ${activeBot} bot...`}
-              placeholderTextColor={colors.textSecondary}
-              value={inputText}
-              onChangeText={setInputText}
-              multiline
-              maxLength={500}
-            />
-            <TouchableOpacity
-              style={[styles.sendButton, { backgroundColor: inputText.trim() && !sending ? colors.primary : colors.border }]}
-              onPress={handleSend}
-              disabled={!inputText.trim() || sending}
-            >
-              <Ionicons name="send" size={20} color={inputText.trim() && !sending ? '#FFFFFF' : colors.textSecondary} />
-            </TouchableOpacity>
+          {/* Input Area - iMessage Style */}
+          <View style={[styles.inputContainer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+            <View style={[styles.inputWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                placeholder="Message..."
+                placeholderTextColor={colors.textSecondary}
+                value={inputText}
+                onChangeText={setInputText}
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  {
+                    backgroundColor: inputText.trim() && !sending ? '#A78BFA' : 'transparent',
+                  },
+                ]}
+                onPress={handleSend}
+                disabled={!inputText.trim() || sending}
+              >
+                <Ionicons
+                  name="arrow-up"
+                  size={20}
+                  color={inputText.trim() && !sending ? '#FFFFFF' : colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </LockedFeature>
@@ -226,8 +305,11 @@ function SuggestionChip({ text, onPress }: { text: string; onPress: () => void }
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   return (
-    <TouchableOpacity style={[styles.suggestionChip, { backgroundColor: colors.primary + '15' }]} onPress={onPress}>
-      <Text variant="caption" color="accent">{text}</Text>
+    <TouchableOpacity
+      style={[styles.suggestionChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={onPress}
+    >
+      <Text variant="caption" color="primary">{text}</Text>
     </TouchableOpacity>
   );
 }
@@ -235,23 +317,139 @@ function SuggestionChip({ text, onPress }: { text: string; onPress: () => void }
 const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboardView: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 16 },
-  botSelector: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, marginBottom: 16 },
-  botTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5 },
-  botTabText: { marginLeft: 8 },
-  botInfoCard: { marginHorizontal: 16, marginBottom: 16 },
-  botInfoContent: { flexDirection: 'row', alignItems: 'center' },
-  botAvatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  botInfoText: { flex: 1 },
+
+  // Header
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  headerText: {
+    flex: 1,
+  },
+  botToggle: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+  },
+  botToggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+
+  // Messages
   messagesContainer: { flex: 1 },
-  messagesContent: { padding: 16, paddingBottom: 32 },
-  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 48 },
-  emptyState: { alignItems: 'center', paddingTop: 48 },
-  emptyText: { marginTop: 16, marginBottom: 24, maxWidth: 250 },
-  suggestions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  suggestionChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  typingIndicator: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 16, borderTopWidth: 1, gap: 12 },
-  input: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, fontSize: 16, maxHeight: 100 },
-  sendButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  messagesContent: {
+    padding: 16,
+    paddingBottom: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 48
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 24,
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    marginBottom: 4,
+  },
+  emptyText: {
+    marginBottom: 24,
+    maxWidth: 250,
+  },
+  suggestions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  suggestionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+
+  // Typing Indicator
+  typingContainer: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  typingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 20,
+    borderBottomLeftRadius: 4,
+    gap: 4,
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  // Input Area
+  inputContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingLeft: 16,
+    paddingRight: 4,
+    paddingVertical: 4,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    maxHeight: 100,
+    paddingVertical: 8,
+    lineHeight: 22,
+  },
+  sendButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
 });

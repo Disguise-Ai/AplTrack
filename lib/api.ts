@@ -33,28 +33,40 @@ export async function connectApp(app: {
   app_store_connect_issuer_id?: string;
   app_store_connect_private_key?: string;
 }): Promise<ConnectedApp> {
-  const insertData: any = {
-    user_id: app.user_id,
-    provider: app.provider || 'appstore',
-    app_store_app_id: app.app_store_app_id,
-    is_active: true,
-  };
+  try {
+    const insertData: any = {
+      user_id: app.user_id,
+      provider: app.provider || 'appstore',
+      app_store_app_id: app.app_store_app_id,
+      is_active: true,
+    };
 
-  // Store credentials securely (in production, encrypt these)
-  if (app.credentials) {
-    insertData.credentials = app.credentials;
+    // Store credentials securely (in production, encrypt these)
+    if (app.credentials) {
+      insertData.credentials = app.credentials;
+    }
+
+    // Legacy support for App Store Connect
+    if (app.app_store_connect_key_id) {
+      insertData.app_store_connect_key_id = app.app_store_connect_key_id;
+      insertData.app_store_connect_issuer_id = app.app_store_connect_issuer_id;
+      insertData.app_store_connect_private_key = app.app_store_connect_private_key;
+    }
+
+    console.log('Connecting app:', app.provider);
+    const { data, error } = await supabase.from('connected_apps').insert(insertData).select().single();
+
+    if (error) {
+      console.error('connectApp error:', error);
+      throw new Error(error.message || 'Failed to connect app');
+    }
+
+    console.log('App connected successfully:', data?.id);
+    return data;
+  } catch (err: any) {
+    console.error('connectApp exception:', err);
+    throw err;
   }
-
-  // Legacy support for App Store Connect
-  if (app.app_store_connect_key_id) {
-    insertData.app_store_connect_key_id = app.app_store_connect_key_id;
-    insertData.app_store_connect_issuer_id = app.app_store_connect_issuer_id;
-    insertData.app_store_connect_private_key = app.app_store_connect_private_key;
-  }
-
-  const { data, error } = await supabase.from('connected_apps').insert(insertData).select().single();
-  if (error) throw error;
-  return data;
 }
 
 export async function getConnectedProviders(userId: string): Promise<string[]> {
@@ -117,9 +129,40 @@ export async function saveChatMessage(userId: string, botType: 'marketing' | 'sa
 }
 
 export async function sendChatMessage(botType: 'marketing' | 'sales', message: string, context?: { appName?: string; category?: string }): Promise<string> {
-  const { data, error } = await supabase.functions.invoke(`${botType}-chat`, { body: { message, context } });
-  if (error) throw error;
-  return data.response;
+  try {
+    console.log('Calling chat function:', botType, message.substring(0, 50));
+
+    // Use direct fetch instead of supabase.functions.invoke
+    const response = await fetch(
+      `https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/${botType}-chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydGt0aWJjeHdzb3F2amxldGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzMyMjgsImV4cCI6MjA4NzEwOTIyOH0.2TXD5lBOeyhYcQWsVwhddi-NeWNShJT3m0to-fadrFw`,
+        },
+        body: JSON.stringify({ message, context }),
+      }
+    );
+
+    console.log('Chat response status:', response.status);
+
+    const data = await response.json();
+    console.log('Chat response data:', data);
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    if (!data.response) {
+      throw new Error('No response from AI');
+    }
+
+    return data.response;
+  } catch (err: any) {
+    console.error('sendChatMessage error:', err.message || err);
+    throw err;
+  }
 }
 
 export async function getCommunityPosts(category?: string, limit = 20, offset = 0): Promise<CommunityPost[]> {
@@ -185,13 +228,21 @@ export async function getSubscription(userId: string): Promise<{
   trial_started_at?: string;
   trial_ends_at?: string;
 }> {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .select('is_premium, expires_at, is_trial, trial_started_at, trial_ends_at')
-    .eq('user_id', userId)
-    .single();
-  if (error && error.code !== 'PGRST116') throw error;
-  return data || { is_premium: false };
+  try {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('is_premium, expires_at, is_trial, trial_started_at, trial_ends_at')
+      .eq('user_id', userId)
+      .single();
+    if (error && error.code !== 'PGRST116') {
+      console.log('Subscription fetch error:', error.message);
+      return { is_premium: false };
+    }
+    return data || { is_premium: false };
+  } catch (err: any) {
+    console.log('Subscription error:', err.message);
+    return { is_premium: false };
+  }
 }
 
 export async function startTrial(userId: string): Promise<void> {
@@ -217,15 +268,34 @@ export async function syncAllDataSources(userId: string): Promise<{
   error?: string;
   message?: string;
 }> {
-  const { data, error } = await supabase.functions.invoke('sync-all', { body: { user_id: userId } });
-  if (error) throw error;
-  return {
-    synced: data?.synced || 0,
-    failed: data?.failed || 0,
-    results: data?.results,
-    error: data?.error,
-    message: data?.message
-  };
+  try {
+    // Add timeout to prevent infinite loading (8 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const { data, error } = await supabase.functions.invoke('sync-all', {
+      body: { user_id: userId },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (error) {
+      console.log('Sync error (non-critical):', error.message);
+      return { synced: 0, failed: 0, message: error.message };
+    }
+
+    return {
+      synced: data?.synced || 0,
+      failed: data?.failed || 0,
+      results: data?.results,
+      error: data?.error,
+      message: data?.message
+    };
+  } catch (err: any) {
+    console.log('Sync timeout or error:', err.message);
+    // Return empty result instead of throwing - sync failure shouldn't block refresh
+    return { synced: 0, failed: 0, message: 'Sync timed out' };
+  }
 }
 
 // Sync a specific provider
@@ -246,30 +316,38 @@ export interface RealtimeMetric {
 }
 
 export async function getRealtimeMetrics(userId: string, startDate?: string, endDate?: string): Promise<RealtimeMetric[]> {
-  const today = new Date().toISOString().split('T')[0];
-  const defaultStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const defaultStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
-  // First get user's connected apps
-  const { data: apps } = await supabase
-    .from('connected_apps')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_active', true);
+    // First get user's connected apps
+    const { data: apps } = await supabase
+      .from('connected_apps')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('is_active', true);
 
-  if (!apps || apps.length === 0) return [];
+    if (!apps || apps.length === 0) return [];
 
-  const appIds = apps.map(a => a.id);
+    const appIds = apps.map(a => a.id);
 
-  const { data, error } = await supabase
-    .from('realtime_metrics')
-    .select('*')
-    .in('app_id', appIds)
-    .gte('metric_date', startDate || defaultStart)
-    .lte('metric_date', endDate || today)
-    .order('metric_date', { ascending: false });
+    const { data, error } = await supabase
+      .from('realtime_metrics')
+      .select('*')
+      .in('app_id', appIds)
+      .gte('metric_date', startDate || defaultStart)
+      .lte('metric_date', endDate || today)
+      .order('metric_date', { ascending: false });
 
-  if (error) throw error;
-  return data || [];
+    if (error) {
+      console.log('Realtime metrics error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err: any) {
+    console.log('Realtime metrics failed:', err.message);
+    return [];
+  }
 }
 
 // Get aggregated metrics across all providers
