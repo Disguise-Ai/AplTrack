@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, useColorScheme } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, useColorScheme, Animated, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,34 +7,194 @@ import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { Colors } from '@/constants/Colors';
 
+const { width } = Dimensions.get('window');
+
 export default function WelcomeScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, tension: 50, friction: 7, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <View style={styles.logoContainer}><View style={[styles.logo, { backgroundColor: colors.primary }]}><Ionicons name="analytics" size={48} color="#FFFFFF" /></View></View>
-        <Text variant="title" weight="bold" align="center" style={styles.title}>AplTrack</Text>
-        <Text variant="body" color="secondary" align="center" style={styles.subtitle}>Your app analytics dashboard.{'\n'}Track downloads, revenue, and grow your startup.</Text>
-        <View style={styles.features}>
-          <FeatureItem icon="trending-up" title="Real-time Analytics" description="Track downloads, revenue, and user metrics" />
-          <FeatureItem icon="chatbubbles" title="AI Marketing Assistant" description="Get personalized growth strategies" />
-          <FeatureItem icon="people" title="Founder Community" description="Connect and learn from other founders" />
-        </View>
+        {/* Hero Section */}
+        <Animated.View style={[styles.heroSection, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+          <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
+            <View style={styles.logoInner}>
+              <View style={[styles.logoRing, styles.logoRing1]} />
+              <View style={[styles.logoRing, styles.logoRing2]} />
+              <View style={styles.logoCenter} />
+              <View style={styles.logoLine} />
+            </View>
+          </View>
+          <Text variant="largeTitle" weight="bold" align="center" style={styles.appName}>
+            AplTrack
+          </Text>
+          <Text variant="body" color="secondary" align="center" style={styles.tagline}>
+            Real-time analytics for indie developers
+          </Text>
+        </Animated.View>
+
+        {/* Stats Preview */}
+        <Animated.View style={[styles.statsPreview, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
+            <Text variant="caption" color="secondary">Downloads</Text>
+            <Text variant="title" weight="bold" style={{ color: colors.primary }}>1,247</Text>
+            <View style={styles.statChange}>
+              <Ionicons name="arrow-up" size={12} color={colors.success} />
+              <Text variant="caption" style={{ color: colors.success }}>23%</Text>
+            </View>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
+            <Text variant="caption" color="secondary">Revenue</Text>
+            <Text variant="title" weight="bold" style={{ color: colors.primary }}>$4.8k</Text>
+            <View style={styles.statChange}>
+              <Ionicons name="arrow-up" size={12} color={colors.success} />
+              <Text variant="caption" style={{ color: colors.success }}>18%</Text>
+            </View>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
+            <Text variant="caption" color="secondary">Rating</Text>
+            <Text variant="title" weight="bold" style={{ color: colors.primary }}>4.8</Text>
+            <Text variant="caption" style={{ color: '#FFD700' }}>★★★★★</Text>
+          </View>
+        </Animated.View>
+
+        {/* Features */}
+        <Animated.View style={[styles.features, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <FeatureItem
+            icon="flash"
+            title="Real-time Data"
+            description="No more waiting 24 hours"
+            colors={colors}
+          />
+          <FeatureItem
+            icon="sparkles"
+            title="AI Marketing Help"
+            description="Get growth strategies instantly"
+            colors={colors}
+          />
+          <FeatureItem
+            icon="git-network"
+            title="Track Attribution"
+            description="Know where users come from"
+            colors={colors}
+          />
+        </Animated.View>
       </View>
-      <View style={styles.buttons}>
-        <Button title="Get Started" onPress={() => router.push('/(auth)/sign-up')} size="large" style={styles.button} />
-        <Button title="I already have an account" onPress={() => router.push('/(auth)/sign-in')} variant="ghost" size="large" style={styles.button} />
-      </View>
+
+      {/* Buttons */}
+      <Animated.View style={[styles.buttons, { opacity: fadeAnim }]}>
+        <Button
+          title="Get Started — It's Free"
+          onPress={() => router.push('/(auth)/sign-up')}
+          size="large"
+          style={styles.button}
+        />
+        <Button
+          title="I already have an account"
+          onPress={() => router.push('/(auth)/sign-in')}
+          variant="ghost"
+          size="large"
+          style={styles.button}
+        />
+        <Text variant="caption" color="secondary" align="center" style={styles.terms}>
+          Free plan includes 2 data sources. Upgrade anytime.
+        </Text>
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
-function FeatureItem({ icon, title, description }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  return <View style={styles.featureItem}><View style={[styles.featureIcon, { backgroundColor: colors.primary + '15' }]}><Ionicons name={icon} size={24} color={colors.primary} /></View><View style={styles.featureText}><Text variant="label" weight="semibold">{title}</Text><Text variant="caption" color="secondary">{description}</Text></View></View>;
+function FeatureItem({ icon, title, description, colors }: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  colors: typeof Colors.light;
+}) {
+  return (
+    <View style={styles.featureItem}>
+      <View style={[styles.featureIcon, { backgroundColor: colors.primary + '15' }]}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+      </View>
+      <View style={styles.featureText}>
+        <Text variant="label" weight="semibold">{title}</Text>
+        <Text variant="caption" color="secondary">{description}</Text>
+      </View>
+      <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+    </View>
+  );
 }
 
-const styles = StyleSheet.create({ container: { flex: 1, padding: 24 }, content: { flex: 1, justifyContent: 'center' }, logoContainer: { alignItems: 'center', marginBottom: 24 }, logo: { width: 96, height: 96, borderRadius: 24, alignItems: 'center', justifyContent: 'center' }, title: { marginBottom: 8 }, subtitle: { marginBottom: 48 }, features: { gap: 16 }, featureItem: { flexDirection: 'row', alignItems: 'center' }, featureIcon: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 }, featureText: { flex: 1 }, buttons: { gap: 12 }, button: { width: '100%' } });
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 24 },
+  content: { flex: 1, justifyContent: 'center' },
+  heroSection: { alignItems: 'center', marginBottom: 32 },
+  logoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  logoInner: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
+  logoRing: { position: 'absolute', borderWidth: 3, borderColor: 'white', borderRadius: 100 },
+  logoRing1: { width: 50, height: 50, borderBottomColor: 'transparent', borderLeftColor: 'transparent' },
+  logoRing2: { width: 34, height: 34, borderBottomColor: 'transparent', borderLeftColor: 'transparent' },
+  logoCenter: { width: 10, height: 10, borderRadius: 5, backgroundColor: 'white' },
+  logoLine: { position: 'absolute', width: 3, height: 20, backgroundColor: 'white', bottom: 0, borderRadius: 2 },
+  appName: { marginBottom: 4 },
+  tagline: { marginBottom: 8 },
+  statsPreview: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 32,
+    paddingHorizontal: 8,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    marginHorizontal: 4,
+  },
+  statChange: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4 },
+  features: { gap: 12 },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  featureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  featureText: { flex: 1 },
+  buttons: { gap: 12, paddingTop: 16 },
+  button: { width: '100%' },
+  terms: { marginTop: 8 },
+});

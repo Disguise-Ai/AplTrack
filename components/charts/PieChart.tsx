@@ -8,7 +8,7 @@ interface PieChartDataItem { source: string; downloads: number; }
 interface PieChartProps { data: PieChartDataItem[]; height?: number; width?: number; }
 
 export function PieChart({ data, height = 220, width }: PieChartProps) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const screenWidth = width || Dimensions.get('window').width - 32;
   const getSourceColor = (source: string): string => Config.ATTRIBUTION_SOURCES.find((s) => s.name.toLowerCase() === source.toLowerCase())?.color || colors.primary;

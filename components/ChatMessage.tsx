@@ -6,7 +6,7 @@ import { Colors } from '@/constants/Colors';
 interface ChatMessageProps { message: string; isUser: boolean; timestamp?: string; }
 
 export function ChatMessage({ message, isUser, timestamp }: ChatMessageProps) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.botContainer]}>

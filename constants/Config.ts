@@ -1,7 +1,12 @@
+// Hardcode values for native builds where env vars may not load
+const ENV_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const ENV_SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
 export const Config = {
-  SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://your-project.supabase.co',
-  SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'your-anon-key',
-  REVENUECAT_API_KEY_IOS: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS || 'your-ios-api-key',
+  // Use env vars if available, otherwise use hardcoded values for native builds
+  SUPABASE_URL: ENV_SUPABASE_URL || 'https://ortktibcxwsoqvjletlj.supabase.co',
+  SUPABASE_ANON_KEY: ENV_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydGt0aWJjeHdzb3F2amxldGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzMyMjgsImV4cCI6MjA4NzEwOTIyOH0.2TXD5lBOeyhYcQWsVwhddi-NeWNShJT3m0to-fadrFw',
+  REVENUECAT_API_KEY_IOS: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS || 'appl_UcXQAmnBqcrFREJGDQGwFdBPtNo',
   REVENUECAT_API_KEY_ANDROID: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID || 'your-android-api-key',
   PREMIUM_MONTHLY_PRODUCT_ID: 'com.apltrack.premium.monthly',
   PREMIUM_ENTITLEMENT_ID: 'premium',

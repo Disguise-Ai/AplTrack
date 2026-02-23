@@ -14,7 +14,7 @@ const categoryIcons: Record<string, keyof typeof Ionicons.glyphMap> = { 'Games':
 export default function CategoryScreen() {
   const router = useRouter();
   const { updateProfile } = useAuth();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,4 +45,4 @@ export default function CategoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({ container: { flex: 1 }, scrollContent: { flexGrow: 1, padding: 24 }, progress: { alignItems: 'center', marginBottom: 32 }, progressBar: { width: '100%', height: 4, backgroundColor: '#E5E5E5', borderRadius: 2, marginBottom: 8 }, progressFill: { height: '100%', borderRadius: 2 }, header: { marginBottom: 32 }, headerSubtitle: { marginTop: 8 }, categories: { gap: 12 }, categoryItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1.5 }, categoryText: { flex: 1, marginLeft: 12 }, buttons: { padding: 24, paddingTop: 0 } });
+const styles = StyleSheet.create({ container: { flex: 1 }, scrollContent: { flexGrow: 1, padding: 24 }, progress: { alignItems: 'center', marginBottom: 32 }, progressBar: { width: '100%', height: 4, backgroundColor: '#27272A', borderRadius: 2, marginBottom: 8 }, progressFill: { height: '100%', borderRadius: 2 }, header: { marginBottom: 32 }, headerSubtitle: { marginTop: 8 }, categories: { gap: 12 }, categoryItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1.5 }, categoryText: { flex: 1, marginLeft: 12 }, buttons: { padding: 24, paddingTop: 0 } });

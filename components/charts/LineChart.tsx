@@ -1,19 +1,94 @@
 import React from 'react';
-import { View, Dimensions, useColorScheme } from 'react-native';
+import { View, Dimensions, useColorScheme, StyleSheet } from 'react-native';
 import { LineChart as RNLineChart } from 'react-native-chart-kit';
 import { Colors } from '@/constants/Colors';
 
-interface LineChartProps { data: number[]; labels?: string[]; height?: number; width?: number; yAxisSuffix?: string; yAxisPrefix?: string; }
+interface LineChartProps {
+  data: number[];
+  labels?: string[];
+  height?: number;
+  width?: number;
+  yAxisSuffix?: string;
+  yAxisPrefix?: string;
+}
 
-export function LineChart({ data, labels, height = 220, width, yAxisSuffix = '', yAxisPrefix = '' }: LineChartProps) {
-  const colorScheme = useColorScheme() ?? 'light';
+export function LineChart({
+  data,
+  labels,
+  height = 200,
+  width,
+  yAxisSuffix = '',
+  yAxisPrefix = '',
+}: LineChartProps) {
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const screenWidth = width || Dimensions.get('window').width - 32;
-  if (!data.length) { data = [0]; labels = ['']; }
-  const displayLabels = labels?.length ? labels.filter((_, i) => i % Math.ceil(labels.length / 6) === 0) : [];
+
+  // Ensure we have valid data
+  const chartData = data.length ? data : [0];
+  const chartLabels = labels?.length ? labels : [''];
+
+  // Show fewer labels for readability
+  const displayLabels = chartLabels.filter(
+    (_, i) => i % Math.ceil(chartLabels.length / 7) === 0
+  );
+
+  // Purple accent color matching Resend aesthetic
+  const accentColor = '#A78BFA';
+
   return (
-    <View>
-      <RNLineChart data={{ labels: displayLabels, datasets: [{ data }] }} width={screenWidth} height={height} yAxisSuffix={yAxisSuffix} yAxisPrefix={yAxisPrefix} chartConfig={{ backgroundColor: colors.card, backgroundGradientFrom: colors.card, backgroundGradientTo: colors.card, decimalPlaces: 0, color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`, labelColor: () => colors.textSecondary, style: { borderRadius: 16 }, propsForDots: { r: '4', strokeWidth: '2', stroke: colors.primary }, propsForBackgroundLines: { strokeDasharray: '', stroke: colors.border, strokeWidth: 1 } }} bezier style={{ borderRadius: 16 }} withInnerLines withOuterLines={false} withVerticalLines={false} fromZero />
+    <View style={styles.container}>
+      <RNLineChart
+        data={{
+          labels: displayLabels,
+          datasets: [{ data: chartData }],
+        }}
+        width={screenWidth}
+        height={height}
+        yAxisSuffix={yAxisSuffix}
+        yAxisPrefix={yAxisPrefix}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(167, 139, 250, ${opacity})`,
+          labelColor: () => colors.textTertiary,
+          style: { borderRadius: 12 },
+          propsForDots: {
+            r: '3',
+            strokeWidth: '2',
+            stroke: accentColor,
+            fill: colorScheme === 'dark' ? '#000' : '#fff',
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4,4',
+            stroke: colors.border,
+            strokeWidth: 0.5,
+          },
+          fillShadowGradientFrom: accentColor,
+          fillShadowGradientFromOpacity: 0.2,
+          fillShadowGradientTo: accentColor,
+          fillShadowGradientToOpacity: 0,
+        }}
+        bezier
+        style={styles.chart}
+        withInnerLines
+        withOuterLines={false}
+        withVerticalLines={false}
+        withHorizontalLabels
+        withVerticalLabels
+        fromZero
+      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    marginLeft: -16,
+  },
+  chart: {
+    borderRadius: 12,
+  },
+});

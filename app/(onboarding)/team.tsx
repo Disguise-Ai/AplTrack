@@ -14,7 +14,7 @@ const teamIcons: Record<string, keyof typeof Ionicons.glyphMap> = { 'solo': 'per
 export default function TeamScreen() {
   const router = useRouter();
   const { updateProfile } = useAuth();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,4 +45,4 @@ export default function TeamScreen() {
   );
 }
 
-const styles = StyleSheet.create({ container: { flex: 1 }, scrollContent: { flexGrow: 1, padding: 24 }, progress: { alignItems: 'center', marginBottom: 32 }, progressBar: { width: '100%', height: 4, backgroundColor: '#E5E5E5', borderRadius: 2, marginBottom: 8 }, progressFill: { height: '100%', borderRadius: 2 }, header: { marginBottom: 32 }, headerSubtitle: { marginTop: 8 }, options: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, optionItem: { width: '47%', padding: 20, borderRadius: 16, borderWidth: 1.5, alignItems: 'center' }, iconContainer: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, buttons: { padding: 24, paddingTop: 0 } });
+const styles = StyleSheet.create({ container: { flex: 1 }, scrollContent: { flexGrow: 1, padding: 24 }, progress: { alignItems: 'center', marginBottom: 32 }, progressBar: { width: '100%', height: 4, backgroundColor: '#27272A', borderRadius: 2, marginBottom: 8 }, progressFill: { height: '100%', borderRadius: 2 }, header: { marginBottom: 32 }, headerSubtitle: { marginTop: 8 }, options: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, optionItem: { width: '47%', padding: 20, borderRadius: 16, borderWidth: 1.5, alignItems: 'center' }, iconContainer: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, buttons: { padding: 24, paddingTop: 0 } });

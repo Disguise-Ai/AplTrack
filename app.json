@@ -15,7 +15,13 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.apltrack.app"
+      "bundleIdentifier": "com.apltrack.app",
+      "infoPlist": {
+        "UIRequiredDeviceCapabilities": [],
+        "UIApplicationSceneManifest": {
+          "UIApplicationSupportsMultipleScenes": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,6 +36,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-router",
       [
         "expo-notifications",

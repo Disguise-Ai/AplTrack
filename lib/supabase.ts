@@ -1,9 +1,43 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { Config } from '@/constants/Config';
 
+// Create a wrapper for AsyncStorage that handles Mac Catalyst gracefully
+const createStorage = () => {
+  return {
+    getItem: async (key: string) => {
+      try {
+        return await AsyncStorage.getItem(key);
+      } catch (error) {
+        console.log('AsyncStorage getItem error:', error);
+        return null;
+      }
+    },
+    setItem: async (key: string, value: string) => {
+      try {
+        await AsyncStorage.setItem(key, value);
+      } catch (error) {
+        console.log('AsyncStorage setItem error:', error);
+      }
+    },
+    removeItem: async (key: string) => {
+      try {
+        await AsyncStorage.removeItem(key);
+      } catch (error) {
+        console.log('AsyncStorage removeItem error:', error);
+      }
+    },
+  };
+};
+
 export const supabase = createClient(Config.SUPABASE_URL, Config.SUPABASE_ANON_KEY, {
-  auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+  auth: {
+    storage: createStorage(),
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
 });
 
 export interface Profile {
@@ -25,13 +59,18 @@ export interface Profile {
 export interface ConnectedApp {
   id: string;
   user_id: string;
-  app_store_app_id: string;
+  provider: 'appstore' | 'revenuecat' | 'appsflyer' | 'adjust' | 'mixpanel' | 'amplitude';
+  app_store_app_id?: string;
   app_name?: string;
   bundle_id?: string;
+  credentials?: Record<string, string>;
+  is_active: boolean;
+  last_sync_at?: string;
+  created_at: string;
+  // Legacy fields for backwards compatibility
   app_store_connect_key_id?: string;
   app_store_connect_issuer_id?: string;
   app_store_connect_private_key?: string;
-  created_at: string;
 }
 
 export interface AnalyticsSnapshot {

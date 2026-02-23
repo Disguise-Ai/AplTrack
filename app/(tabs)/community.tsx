@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { PostCard } from '@/components/PostCard';
+import { LockedFeature } from '@/components/Paywall';
 import { useAuth } from '@/hooks/useAuth';
 import { getCommunityPosts, createPost, likePost, unlikePost, checkIfLiked } from '@/lib/api';
 import type { CommunityPost } from '@/lib/supabase';
@@ -11,7 +12,7 @@ import { Config } from '@/constants/Config';
 import { Colors } from '@/constants/Colors';
 
 export default function CommunityScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { user } = useAuth();
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -56,6 +57,7 @@ export default function CommunityScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <LockedFeature feature="community" featureTitle="Founder Community">
       <View style={styles.header}>
         <View><Text variant="title" weight="bold">Community</Text><Text variant="caption" color="secondary">Connect with fellow founders</Text></View>
         <TouchableOpacity style={[styles.createButton, { backgroundColor: colors.primary }]} onPress={() => setShowCreateModal(true)}><Ionicons name="add" size={24} color="#FFFFFF" /></TouchableOpacity>
@@ -78,8 +80,9 @@ export default function CommunityScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+      </LockedFeature>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({ container: { flex: 1 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }, createButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, categories: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 }, categoryChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, marginRight: 8 }, postsContainer: { padding: 16, paddingTop: 0, paddingBottom: 32 }, emptyState: { alignItems: 'center', paddingTop: 48 }, emptyText: { marginTop: 16 }, modalContainer: { flex: 1 }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5E5' }, modalContent: { padding: 16 }, titleInput: { fontSize: 20, fontWeight: '600', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, marginBottom: 16 }, contentInput: { fontSize: 16, minHeight: 150, marginBottom: 24 }, categoryLabel: { marginBottom: 12 }, categorySelector: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, categorySelectorChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, borderWidth: 1.5 } });
+const styles = StyleSheet.create({ container: { flex: 1 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }, createButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, categories: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 }, categoryChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, marginRight: 8 }, postsContainer: { padding: 16, paddingTop: 0, paddingBottom: 32 }, emptyState: { alignItems: 'center', paddingTop: 48 }, emptyText: { marginTop: 16 }, modalContainer: { flex: 1 }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#27272A' }, modalContent: { padding: 16 }, titleInput: { fontSize: 20, fontWeight: '600', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, marginBottom: 16 }, contentInput: { fontSize: 16, minHeight: 150, marginBottom: 24 }, categoryLabel: { marginBottom: 12 }, categorySelector: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, categorySelectorChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, borderWidth: 1.5 } });

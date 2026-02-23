@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, Profile } from '@/lib/supabase';
 import { getProfile, updateProfile } from '@/lib/api';
@@ -12,26 +13,52 @@ interface AuthState {
   initialized: boolean;
 }
 
+// Helper to add timeout to promises
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Timeout')), ms)
+  );
+  return Promise.race([promise, timeout]);
+};
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>({ session: null, user: null, profile: null, loading: true, initialized: false });
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      let profile: Profile | null = null;
-      if (session?.user) {
-        try { profile = await getProfile(session.user.id); } catch (error) { console.log('Profile not found, will create on onboarding'); }
-        try { await initializeRevenueCat(session.user.id); await logInRevenueCat(session.user.id); } catch (error) { console.log('RevenueCat init skipped'); }
+    const initAuth = async () => {
+      try {
+        // Add timeout for Mac Catalyst which can sometimes hang
+        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 5000);
+        let profile: Profile | null = null;
+        if (session?.user) {
+          try {
+            profile = await withTimeout(getProfile(session.user.id), 5000);
+          } catch (error) {
+            console.log('Profile not found or timeout, will create on onboarding');
+          }
+          // Don't wait for RevenueCat - do it in background (skip on macOS)
+          if (Platform.OS !== 'macos') {
+            initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
+          }
+        }
+        setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true });
+      } catch (error) {
+        console.log('Auth init error (possibly timeout):', error);
+        // On error/timeout, still mark as initialized so user can proceed
+        setState({ session: null, user: null, profile: null, loading: false, initialized: true });
       }
-      setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true });
-    });
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       let profile: Profile | null = null;
       if (session?.user) {
         try { profile = await getProfile(session.user.id); } catch (error) { console.log('Profile not found'); }
-        try { await initializeRevenueCat(session.user.id); await logInRevenueCat(session.user.id); } catch (error) { console.log('RevenueCat skipped'); }
+        // Don't wait for RevenueCat
+        initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
       }
-      setState((prev) => ({ ...prev, session, user: session?.user ?? null, profile, loading: false }));
+      setState((prev) => ({ ...prev, session, user: session?.user ?? null, profile, loading: false, initialized: true }));
     });
 
     return () => { subscription.unsubscribe(); };
@@ -39,7 +66,14 @@ export function useAuth() {
 
   const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
     setState((prev) => ({ ...prev, loading: true }));
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName },
+        // No redirect - user confirms in browser, then comes back to app
+      },
+    });
     setState((prev) => ({ ...prev, loading: false }));
     if (error) throw error;
     return data;
@@ -75,5 +109,10 @@ export function useAuth() {
     return profile;
   }, [state.user]);
 
-  return { ...state, signUp, signIn, signOut, refreshProfile, updateProfile: updateUserProfile, isAuthenticated: !!state.session, needsOnboarding: state.profile && !state.profile.onboarding_completed };
+  // User needs onboarding if:
+  // 1. They have a session but no profile, OR
+  // 2. They have a profile but onboarding is not completed
+  const needsOnboarding = !!state.session && (!state.profile || !state.profile.onboarding_completed);
+
+  return { ...state, signUp, signIn, signOut, refreshProfile, updateProfile: updateUserProfile, isAuthenticated: !!state.session, needsOnboarding };
 }

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { TrialCountdown } from '@/components/TrialCountdown';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
 import { Config } from '@/constants/Config';
@@ -13,10 +14,10 @@ import { Colors } from '@/constants/Colors';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { user, profile, signOut } = useAuth();
-  const { isPremium, monthlyPackage, purchase, restore, purchasing } = useSubscription();
+  const { isPremium, isTrial, trialEndsAt, monthlyPackage, purchase, restore, purchasing, beginTrial } = useSubscription();
   const [showPaywall, setShowPaywall] = useState(false);
 
   const handleSignOut = () => { Alert.alert('Sign Out', 'Are you sure you want to sign out?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign Out', style: 'destructive', onPress: async () => { try { await signOut(); router.replace('/(auth)/welcome'); } catch (error) { console.error('Error signing out:', error); } } }]); };
@@ -32,11 +33,16 @@ export default function SettingsScreen() {
           <View style={styles.profileContent}>
             <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}><Text variant="title" weight="bold" color="accent">{profile?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}</Text></View>
             <View style={styles.profileInfo}><Text variant="label" weight="semibold">{profile?.full_name || 'User'}</Text><Text variant="caption" color="secondary">{user?.email}</Text>{profile?.company_name && <Text variant="caption" color="secondary">{profile.company_name}</Text>}</View>
-            {isPremium && <View style={[styles.premiumBadge, { backgroundColor: colors.success + '20' }]}><Ionicons name="star" size={14} color={colors.success} /><Text variant="caption" style={{ color: colors.success, marginLeft: 4 }}>Premium</Text></View>}
+            {isPremium && !isTrial && <View style={[styles.premiumBadge, { backgroundColor: colors.success + '20' }]}><Ionicons name="star" size={14} color={colors.success} /><Text variant="caption" style={{ color: colors.success, marginLeft: 4 }}>Premium</Text></View>}
+            {isTrial && <View style={[styles.premiumBadge, { backgroundColor: colors.warning + '20' }]}><Ionicons name="timer" size={14} color={colors.warning} /><Text variant="caption" style={{ color: colors.warning, marginLeft: 4 }}>Trial</Text></View>}
           </View>
         </Card>
-        {!isPremium && <Card style={styles.subscriptionCard}><View style={styles.subscriptionContent}><View style={[styles.crownIcon, { backgroundColor: colors.warning + '20' }]}><Ionicons name="diamond" size={28} color={colors.warning} /></View><View style={styles.subscriptionInfo}><Text variant="label" weight="semibold">Upgrade to Premium</Text><Text variant="caption" color="secondary">Unlock all features for {Config.SUBSCRIPTION_PRICE}</Text></View></View><Button title="Upgrade" onPress={() => setShowPaywall(true)} size="small" style={styles.upgradeButton} /></Card>}
-        <View style={styles.section}><Text variant="caption" color="secondary" style={styles.sectionTitle}>ACCOUNT</Text><Card style={styles.sectionCard} padding={0}><SettingsItem icon="person-outline" label="Edit Profile" onPress={() => {}} /><SettingsItem icon="notifications-outline" label="Notifications" onPress={() => {}} /><SettingsItem icon="link-outline" label="Connected Apps" onPress={() => {}} /></Card></View>
+        {isTrial && trialEndsAt && (
+          <TrialCountdown trialEndsAt={trialEndsAt} onUpgrade={() => setShowPaywall(true)} />
+        )}
+        {!isPremium && !isTrial && <Card style={styles.subscriptionCard}><View style={styles.subscriptionContent}><View style={[styles.crownIcon, { backgroundColor: colors.warning + '20' }]}><Ionicons name="diamond" size={28} color={colors.warning} /></View><View style={styles.subscriptionInfo}><Text variant="label" weight="semibold">Upgrade to Premium</Text><Text variant="caption" color="secondary">Unlock all features for {Config.SUBSCRIPTION_PRICE}</Text></View></View><Button title="Start Free Trial" onPress={async () => { try { await beginTrial(); Alert.alert('Trial Started', 'Your 72-hour free trial has begun!'); } catch (e: any) { Alert.alert('Error', e.message || 'Failed to start trial'); } }} size="small" style={styles.upgradeButton} /></Card>}
+        <View style={styles.section}><Text variant="caption" color="secondary" style={styles.sectionTitle}>DATA SOURCES</Text><Card style={styles.sectionCard} padding={0}><SettingsItem icon="key-outline" label="API Keys & Integrations" onPress={() => router.push('/data-sources')} /><SettingsItem icon="sync-outline" label="Sync Settings" onPress={() => {}} /></Card></View>
+        <View style={styles.section}><Text variant="caption" color="secondary" style={styles.sectionTitle}>ACCOUNT</Text><Card style={styles.sectionCard} padding={0}><SettingsItem icon="person-outline" label="Edit Profile" onPress={() => {}} /><SettingsItem icon="notifications-outline" label="Notifications" onPress={() => {}} /><SettingsItem icon="card-outline" label="Subscription" onPress={() => setShowPaywall(true)} /></Card></View>
         <View style={styles.section}><Text variant="caption" color="secondary" style={styles.sectionTitle}>SUPPORT</Text><Card style={styles.sectionCard} padding={0}><SettingsItem icon="help-circle-outline" label="Help Center" onPress={() => openLink('https://apltrack.com/help')} external /><SettingsItem icon="mail-outline" label="Contact Us" onPress={() => openLink('mailto:support@apltrack.com')} external /><SettingsItem icon="chatbubble-outline" label="Send Feedback" onPress={() => openLink('https://apltrack.com/feedback')} external /></Card></View>
         <View style={styles.section}><Text variant="caption" color="secondary" style={styles.sectionTitle}>LEGAL</Text><Card style={styles.sectionCard} padding={0}><SettingsItem icon="document-text-outline" label="Terms of Service" onPress={() => openLink('https://apltrack.com/terms')} external /><SettingsItem icon="shield-outline" label="Privacy Policy" onPress={() => openLink('https://apltrack.com/privacy')} external /><SettingsItem icon="refresh-outline" label="Restore Purchases" onPress={handleRestore} /></Card></View>
         <Button title="Sign Out" onPress={handleSignOut} variant="outline" style={styles.signOutButton} />
@@ -62,13 +68,13 @@ export default function SettingsScreen() {
 }
 
 function SettingsItem({ icon, label, onPress, external = false }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; external?: boolean }) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   return <TouchableOpacity style={[styles.settingsItem, { borderBottomColor: colors.border }]} onPress={onPress}><Ionicons name={icon} size={22} color={colors.textSecondary} /><Text variant="body" style={styles.settingsLabel}>{label}</Text><Ionicons name={external ? 'open-outline' : 'chevron-forward'} size={20} color={colors.textSecondary} /></TouchableOpacity>;
 }
 
 function PaywallFeature({ icon, title, description }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   return <View style={styles.featureItem}><View style={[styles.featureIcon, { backgroundColor: colors.primary + '15' }]}><Ionicons name={icon} size={24} color={colors.primary} /></View><View style={styles.featureText}><Text variant="label" weight="semibold">{title}</Text><Text variant="caption" color="secondary">{description}</Text></View></View>;
 }

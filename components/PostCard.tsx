@@ -9,7 +9,7 @@ import type { CommunityPost } from '@/lib/supabase';
 interface PostCardProps { post: CommunityPost; onPress: () => void; onLike: () => void; isLiked?: boolean; }
 
 export function PostCard({ post, onPress, onLike, isLiked = false }: PostCardProps) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const formatDate = (dateStr: string): string => { const date = new Date(dateStr); const now = new Date(); const diffMs = now.getTime() - date.getTime(); const diffMins = Math.floor(diffMs / 60000); const diffHours = Math.floor(diffMs / 3600000); const diffDays = Math.floor(diffMs / 86400000); if (diffMins < 60) return `${diffMins}m ago`; if (diffHours < 24) return `${diffHours}h ago`; if (diffDays < 7) return `${diffDays}d ago`; return date.toLocaleDateString(); };
   return (
@@ -28,4 +28,4 @@ export function PostCard({ post, onPress, onLike, isLiked = false }: PostCardPro
   );
 }
 
-const styles = StyleSheet.create({ card: { marginBottom: 12 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }, authorInfo: { flexDirection: 'row', alignItems: 'center' }, avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 }, category: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }, title: { marginBottom: 8 }, content: { marginBottom: 16 }, footer: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E5E5' }, action: { flexDirection: 'row', alignItems: 'center', marginRight: 20 }, actionText: { marginLeft: 6 } });
+const styles = StyleSheet.create({ card: { marginBottom: 12 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }, authorInfo: { flexDirection: 'row', alignItems: 'center' }, avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 }, category: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }, title: { marginBottom: 8 }, content: { marginBottom: 16 }, footer: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#27272A' }, action: { flexDirection: 'row', alignItems: 'center', marginRight: 20 }, actionText: { marginLeft: 6 } });
