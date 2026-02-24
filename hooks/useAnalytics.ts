@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { getConnectedApps, getAnalytics, getLatestAnalytics, getAttribution, syncAllDataSources, getRealtimeMetrics, type RealtimeMetric } from '@/lib/api';
 import type { ConnectedApp, AnalyticsSnapshot, AttributionData } from '@/lib/supabase';
 import { useAuth } from './useAuth';
+import { updateWidgetData } from '@/lib/widgetData';
 
 interface AnalyticsState {
   apps: ConnectedApp[];
@@ -50,61 +51,108 @@ export function useAnalytics() {
   useEffect(() => {
     if (!user) return;
 
-    if (!state.selectedApp) {
-      // No connected app - check for realtime metrics first, then show mock data
-      const loadRealtimeOrMock = async () => {
-        try {
-          const endDate = new Date().toISOString().split('T')[0];
-          const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-          const realtimeMetrics = await getRealtimeMetrics(user.id, startDate, endDate);
+    // Always load realtime metrics for all connected apps
+    const loadRealtimeMetrics = async () => {
+      try {
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const realtimeMetrics = await getRealtimeMetrics(user.id, startDate, endDate);
 
-          if (realtimeMetrics.length > 0) {
-            // Create analytics from realtime metrics
-            const metricsByDate = new Map<string, AnalyticsSnapshot>();
-            for (const m of realtimeMetrics) {
-              if (!metricsByDate.has(m.metric_date)) {
-                metricsByDate.set(m.metric_date, {
-                  id: `realtime-${m.metric_date}`,
-                  app_id: m.app_id,
-                  date: m.metric_date,
-                  downloads: 0,
-                  revenue: 0,
-                  active_users: 0,
-                  ratings_count: 0,
-                  average_rating: 0,
-                  created_at: new Date().toISOString(),
-                });
-              }
-              const snapshot = metricsByDate.get(m.metric_date)!;
-              switch (m.metric_type) {
-                case 'new_customers':
-                case 'installs':
-                case 'downloads':
-                  snapshot.downloads += m.metric_value;
-                  break;
-                case 'revenue':
-                case 'mrr':
-                  snapshot.revenue += m.metric_value;
-                  break;
-                case 'active_subscribers':
-                case 'active_users':
-                case 'daily_active_users':
-                  snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
-                  break;
-              }
+        console.log('[useAnalytics] Got realtime metrics:', realtimeMetrics.length);
+
+        // Log what we got
+        if (realtimeMetrics.length > 0) {
+          const downloadMetrics = realtimeMetrics.filter(m =>
+            m.metric_type === 'downloads' || m.metric_type === 'new_customers'
+          );
+          console.log('[useAnalytics] Download metrics found:', downloadMetrics.map(d => ({
+            type: d.metric_type,
+            value: d.metric_value,
+            date: d.metric_date,
+            app: d.app_id.substring(0, 8)
+          })));
+        }
+
+        if (realtimeMetrics.length > 0) {
+          // Create analytics from realtime metrics - aggregate ALL sources
+          const metricsByDate = new Map<string, AnalyticsSnapshot>();
+
+          for (const m of realtimeMetrics) {
+            if (!metricsByDate.has(m.metric_date)) {
+              metricsByDate.set(m.metric_date, {
+                id: `realtime-${m.metric_date}`,
+                app_id: m.app_id,
+                date: m.metric_date,
+                downloads: 0,
+                revenue: 0,
+                active_users: 0,
+                ratings_count: 0,
+                average_rating: 0,
+                created_at: new Date().toISOString(),
+              });
             }
-            const analytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-            setState((prev) => ({ ...prev, analytics, latestSnapshot: analytics[analytics.length - 1] || null, loading: false }));
-          } else {
-            const mockData = generateMockData();
-            setState((prev) => ({ ...prev, analytics: mockData.analytics, latestSnapshot: mockData.latestSnapshot, attribution: mockData.attribution, loading: false }));
+            const snapshot = metricsByDate.get(m.metric_date)!;
+
+            // Sum up metrics from all sources
+            switch (m.metric_type) {
+              case 'downloads_daily':
+                // Daily downloads (new users today) - take max across apps
+                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
+                break;
+              case 'downloads_cumulative':
+              case 'downloads':
+              case 'new_customers':
+              case 'installs':
+                // Ignore old cumulative metrics for daily view
+                break;
+              case 'revenue':
+                snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
+                break;
+              case 'mrr':
+                // MRR is monthly, don't add it to daily revenue
+                break;
+              case 'active_subscribers':
+              case 'active_users':
+              case 'daily_active_users':
+                snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
+                break;
+            }
           }
-        } catch (error) {
+
+          const analytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+          const latestDay = analytics[analytics.length - 1];
+          const totalDownloads = analytics.reduce((sum, a) => sum + a.downloads, 0);
+          console.log('[useAnalytics] Built analytics:', {
+            days: analytics.length,
+            latestDate: latestDay?.date,
+            latestDownloads: latestDay?.downloads,
+            totalDownloads,
+            latestRevenue: latestDay?.revenue,
+            latestActiveUsers: latestDay?.active_users
+          });
+
+          setState((prev) => ({ ...prev, analytics, latestSnapshot: analytics[analytics.length - 1] || null, loading: false }));
+        } else if (state.apps.length === 0) {
+          // No connected apps and no metrics - show mock data
+          console.log('[useAnalytics] No metrics, showing mock data');
           const mockData = generateMockData();
           setState((prev) => ({ ...prev, analytics: mockData.analytics, latestSnapshot: mockData.latestSnapshot, attribution: mockData.attribution, loading: false }));
+        } else {
+          // Has connected apps but no metrics yet - show zeros
+          console.log('[useAnalytics] Has apps but no metrics yet');
+          setState((prev) => ({ ...prev, analytics: [], latestSnapshot: null, loading: false }));
         }
-      };
-      loadRealtimeOrMock();
+      } catch (error) {
+        console.error('[useAnalytics] Error loading metrics:', error);
+        const mockData = generateMockData();
+        setState((prev) => ({ ...prev, analytics: mockData.analytics, latestSnapshot: mockData.latestSnapshot, attribution: mockData.attribution, loading: false }));
+      }
+    };
+
+    loadRealtimeMetrics();
+
+    // Skip the old selectedApp logic
+    if (!state.selectedApp) {
       return;
     }
 
@@ -140,14 +188,21 @@ export function useAnalytics() {
             }
             const snapshot = metricsByDate.get(m.metric_date)!;
             switch (m.metric_type) {
+              case 'downloads_daily':
+                // Daily downloads (new users today)
+                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
+                break;
+              case 'downloads_cumulative':
+              case 'downloads':
               case 'new_customers':
               case 'installs':
-              case 'downloads':
-                snapshot.downloads += m.metric_value;
+                // Ignore old cumulative metrics
                 break;
               case 'revenue':
+                snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
+                break;
               case 'mrr':
-                snapshot.revenue += m.metric_value;
+                // MRR is monthly
                 break;
               case 'active_subscribers':
               case 'active_users':
@@ -173,72 +228,75 @@ export function useAnalytics() {
     if (!user) return;
     setState((prev) => ({ ...prev, syncing: true, error: null }));
     try {
-      // Sync all connected data sources
-      await syncAllDataSources(user.id);
+      // Just load data from database - don't call external APIs here
+      console.log('[syncAnalytics] Loading data for user:', user.id);
 
-      // Reload data after sync
+      // Load realtime metrics from database
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const realtimeMetrics = await getRealtimeMetrics(user.id, startDate, endDate);
 
-      if (state.selectedApp) {
-        const [analytics, latestSnapshot, attribution] = await Promise.all([
-          getAnalytics(state.selectedApp.id, startDate, endDate),
-          getLatestAnalytics(state.selectedApp.id),
-          getAttribution(state.selectedApp.id, startDate, endDate)
-        ]);
+      console.log('[syncAnalytics] Got metrics:', realtimeMetrics.length);
 
-        // Also get real-time metrics
-        const realtimeMetrics = await getRealtimeMetrics(user.id, startDate, endDate);
-
-        // Merge realtime metrics into analytics if we have them
-        let mergedAnalytics = analytics;
-        if (realtimeMetrics.length > 0 && analytics.length === 0) {
-          // Create analytics from realtime metrics
-          const metricsByDate = new Map<string, AnalyticsSnapshot>();
-          for (const m of realtimeMetrics) {
-            if (!metricsByDate.has(m.metric_date)) {
-              metricsByDate.set(m.metric_date, {
-                id: `realtime-${m.metric_date}`,
-                app_id: m.app_id,
-                date: m.metric_date,
-                downloads: 0,
-                revenue: 0,
-                active_users: 0,
-                ratings_count: 0,
-                average_rating: 0,
-                created_at: new Date().toISOString(),
-              });
-            }
-            const snapshot = metricsByDate.get(m.metric_date)!;
-            switch (m.metric_type) {
-              case 'new_customers':
-              case 'installs':
-              case 'downloads':
-                snapshot.downloads += m.metric_value;
-                break;
-              case 'revenue':
-              case 'mrr':
-                snapshot.revenue += m.metric_value;
-                break;
-              case 'active_subscribers':
-              case 'active_users':
-              case 'daily_active_users':
-                snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
-                break;
-            }
+      if (realtimeMetrics.length > 0) {
+        // Create analytics from realtime metrics
+        const metricsByDate = new Map<string, AnalyticsSnapshot>();
+        for (const m of realtimeMetrics) {
+          if (!metricsByDate.has(m.metric_date)) {
+            metricsByDate.set(m.metric_date, {
+              id: `realtime-${m.metric_date}`,
+              app_id: m.app_id,
+              date: m.metric_date,
+              downloads: 0,
+              revenue: 0,
+              active_users: 0,
+              ratings_count: 0,
+              average_rating: 0,
+              created_at: new Date().toISOString(),
+            });
           }
-          mergedAnalytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+          const snapshot = metricsByDate.get(m.metric_date)!;
+          switch (m.metric_type) {
+            case 'downloads_daily':
+              // Daily downloads (new users today)
+              snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
+              break;
+            case 'downloads_cumulative':
+            case 'downloads':
+            case 'new_customers':
+            case 'installs':
+              // Ignore old cumulative metrics
+              break;
+            case 'revenue':
+              snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
+              break;
+            case 'active_subscribers':
+            case 'active_users':
+            case 'daily_active_users':
+              snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
+              break;
+          }
         }
+        const analytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+        const latestDay = analytics[analytics.length - 1];
+        const totalDownloads = analytics.reduce((sum, a) => sum + a.downloads, 0);
+        console.log('[syncAnalytics] Built analytics:', {
+          days: analytics.length,
+          latestDate: latestDay?.date,
+          latestDownloads: latestDay?.downloads,
+          totalDownloads,
+          latestRevenue: latestDay?.revenue
+        });
 
-        setState((prev) => ({ ...prev, analytics: mergedAnalytics, latestSnapshot: mergedAnalytics[mergedAnalytics.length - 1] || latestSnapshot, attribution, syncing: false }));
+        setState((prev) => ({ ...prev, analytics, latestSnapshot: analytics[analytics.length - 1] || null, syncing: false }));
       } else {
         setState((prev) => ({ ...prev, syncing: false }));
       }
     } catch (error: any) {
-      console.error('Sync error:', error);
+      console.error('[syncAnalytics] Error:', error);
       setState((prev) => ({ ...prev, syncing: false, error: error.message || 'Failed to sync analytics' }));
     }
-  }, [user, state.selectedApp]);
+  }, [user]);
 
   const stats = useMemo(() => {
     if (!state.analytics.length) return { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
@@ -252,8 +310,54 @@ export function useAnalytics() {
     const previousWeek = state.analytics.slice(-14, -7);
     const previousWeekDownloads = previousWeek.reduce((sum, s) => sum + s.downloads, 0);
     const previousWeekRevenue = previousWeek.reduce((sum, s) => sum + s.revenue, 0);
-    return { downloadsToday: today?.downloads || 0, downloadsWeek, downloadsMonth, revenueToday: today?.revenue || 0, revenueWeek, revenueMonth, activeUsers: today?.active_users || 0, averageRating: today?.average_rating || 0, ratingsCount: lastMonth.reduce((sum, s) => sum + s.ratings_count, 0), downloadsChange: previousWeekDownloads ? ((downloadsWeek - previousWeekDownloads) / previousWeekDownloads) * 100 : 0, revenueChange: previousWeekRevenue ? ((revenueWeek - previousWeekRevenue) / previousWeekRevenue) * 100 : 0 };
+    const stats = {
+      downloadsToday: today?.downloads || 0,
+      downloadsWeek,
+      downloadsMonth,
+      revenueToday: today?.revenue || 0,
+      revenueWeek,
+      revenueMonth,
+      activeUsers: today?.active_users || 0,
+      averageRating: today?.average_rating || 0,
+      ratingsCount: lastMonth.reduce((sum, s) => sum + s.ratings_count, 0),
+      downloadsChange: previousWeekDownloads ? ((downloadsWeek - previousWeekDownloads) / previousWeekDownloads) * 100 : 0,
+      revenueChange: previousWeekRevenue ? ((revenueWeek - previousWeekRevenue) / previousWeekRevenue) * 100 : 0
+    };
+    console.log('[useAnalytics] Stats computed:', {
+      downloadsToday: stats.downloadsToday,
+      downloadsWeek: stats.downloadsWeek,
+      downloadsMonth: stats.downloadsMonth,
+      revenueToday: stats.revenueToday
+    });
+    return stats;
   }, [state.analytics]);
+
+  // Update widget data when stats change
+  const prevStatsRef = useRef<typeof stats | null>(null);
+  useEffect(() => {
+    // Only update if stats have actually changed
+    const prevStats = prevStatsRef.current;
+    if (
+      prevStats &&
+      prevStats.downloadsToday === stats.downloadsToday &&
+      prevStats.downloadsWeek === stats.downloadsWeek &&
+      prevStats.revenueToday === stats.revenueToday &&
+      prevStats.activeUsers === stats.activeUsers
+    ) {
+      return;
+    }
+    prevStatsRef.current = stats;
+
+    // Update widget data for iOS widgets
+    if (stats.downloadsToday > 0 || stats.downloadsWeek > 0 || stats.revenueToday > 0) {
+      updateWidgetData({
+        downloadsToday: stats.downloadsToday,
+        downloadsWeek: stats.downloadsWeek,
+        revenue: stats.revenueToday,
+        activeUsers: stats.activeUsers,
+      });
+    }
+  }, [stats]);
 
   const attributionBySource = useMemo(() => {
     const sourceMap = new Map<string, number>();

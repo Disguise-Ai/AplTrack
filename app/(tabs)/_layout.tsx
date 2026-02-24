@@ -57,11 +57,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="leaderboard"
+        name="community"
         options={{
-          title: 'Leaderboard',
+          title: 'Community',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy" size={size} color={color} />
+            <Ionicons name="people" size={size} color={color} />
           ),
         }}
       />
