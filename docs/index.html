@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statly - Real-Time App Analytics for Indie Developers</title>
+    <meta name="description" content="Track your app's performance in real-time. Get downloads, revenue, and user insights faster than ever. Built for indie developers and small teams.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <img src="assets/logo.png" alt="Statly" class="logo-icon" width="32" height="32">
+                <span>Statly</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#download" class="nav-cta">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">Real-time analytics for apps</div>
+            <h1 class="hero-title">Your app data.<br>In seconds, not days.</h1>
+            <p class="hero-subtitle">Top platforms make you wait 24-48 hours. We don't. Get real-time downloads, revenue, and insights the moment they happen. No delays. No compromises.</p>
+            <div class="hero-buttons">
+                <a href="#download" class="btn btn-primary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 22 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09997 22C7.78997 22.05 6.79997 20.68 5.95997 19.47C4.24997 17 2.93997 12.45 4.69997 9.39C5.56997 7.87 7.12997 6.91 8.81997 6.88C10.1 6.86 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/>
+                    </svg>
+                    Download for iOS
+                </a>
+                <a href="#download" class="btn btn-secondary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M4 4H20C21.1 4 22 4.9 22 6V18C22 19.1 21.1 20 20 20H4C2.9 20 2 19.1 2 18V6C2 4.9 2.9 4 4 4ZM4 6V18H20V6H4ZM12 8C14.21 8 16 9.79 16 12C16 14.21 14.21 16 12 16C9.79 16 8 14.21 8 12C8 9.79 9.79 8 12 8Z"/>
+                    </svg>
+                    Download for Mac
+                </a>
+            </div>
+            <p class="hero-note">Requires iOS 15+ or macOS 12+</p>
+        </div>
+        <div class="hero-image">
+            <div class="phone-mockup">
+                <div class="phone-screen">
+                    <div class="app-header">
+                        <div class="app-title-row">
+                            <img src="assets/logo.png" alt="Statly" class="app-logo">
+                            <span class="app-title">Dashboard</span>
+                        </div>
+                        <span class="app-date">Today</span>
+                    </div>
+                    <div class="stat-cards">
+                        <div class="stat-card">
+                            <span class="stat-label">Downloads</span>
+                            <span class="stat-value">1,247</span>
+                            <span class="stat-change positive">+23%</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Revenue</span>
+                            <span class="stat-value">$4,892</span>
+                            <span class="stat-change positive">+18%</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Active Users</span>
+                            <span class="stat-value">8,431</span>
+                            <span class="stat-change positive">+12%</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Rating</span>
+                            <span class="stat-value">4.8</span>
+                            <span class="stat-stars">★★★★★</span>
+                        </div>
+                    </div>
+                    <div class="chart-placeholder">
+                        <div class="chart-line"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Logos Section -->
+    <section class="logos">
+        <p class="logos-title">Connect all your revenue & analytics tools</p>
+        <div class="logos-grid">
+            <div class="logo-item">RevenueCat</div>
+            <div class="logo-item">Polar</div>
+            <div class="logo-item">Stripe</div>
+            <div class="logo-item">Superwall</div>
+            <div class="logo-item">Adapty</div>
+            <div class="logo-item">Qonversion</div>
+        </div>
+        <div class="logos-grid" style="margin-top: 24px;">
+            <div class="logo-item">AppsFlyer</div>
+            <div class="logo-item">Adjust</div>
+            <div class="logo-item">Mixpanel</div>
+            <div class="logo-item">Amplitude</div>
+            <div class="logo-item">Paddle</div>
+            <div class="logo-item">App Store Connect</div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="features-header">
+            <h2 class="section-title">Why wait 48 hours<br>when you don't have to?</h2>
+            <p class="section-subtitle">We aggregate data from all your tools and show it instantly. Safely and reliably.</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                </div>
+                <h3>Instant Results</h3>
+                <p>See downloads and revenue the moment they happen. While top platforms delay 48 hours, you're already making decisions.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                </div>
+                <h3>All Your Tools, One Dashboard</h3>
+                <p>RevenueCat, Polar, Stripe, Superwall, Adapty, and more. Connect everything and see your complete picture.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <h3>AI Marketing Assistant</h3>
+                <p>Get personalized ASO tips, marketing strategies, and growth advice powered by AI.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                </div>
+                <h3>Founder Community</h3>
+                <p>Connect with other indie developers. Share wins, get feedback, and learn from each other.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20V10"/>
+                        <path d="M18 20V4"/>
+                        <path d="M6 20v-4"/>
+                    </svg>
+                </div>
+                <h3>Attribution Tracking</h3>
+                <p>Know exactly where your users come from. Track campaigns across Twitter, Reddit, and more.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                </div>
+                <h3>Smart Notifications</h3>
+                <p>Get instant alerts for new downloads, sales milestones, and review changes.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshot Section -->
+    <section class="screenshots">
+        <div class="screenshots-content">
+            <h2 class="section-title">Real-time data, everywhere</h2>
+            <p class="section-subtitle">Check your stats on iPhone, iPad, or Mac. Your data syncs instantly across all devices.</p>
+        </div>
+        <div class="screenshots-display">
+            <div class="mac-mockup">
+                <div class="mac-screen">
+                    <div class="mac-app">
+                        <div class="mac-sidebar">
+                            <div class="sidebar-item active">Dashboard</div>
+                            <div class="sidebar-item">Attribution</div>
+                            <div class="sidebar-item">AI Chat</div>
+                            <div class="sidebar-item">Community</div>
+                            <div class="sidebar-item">Settings</div>
+                        </div>
+                        <div class="mac-content">
+                            <h3>Your App Analytics</h3>
+                            <div class="mac-stats">
+                                <div class="mac-stat">
+                                    <span class="mac-stat-value">$12,847</span>
+                                    <span class="mac-stat-label">Monthly Revenue</span>
+                                </div>
+                                <div class="mac-stat">
+                                    <span class="mac-stat-value">4,231</span>
+                                    <span class="mac-stat-label">New Users</span>
+                                </div>
+                                <div class="mac-stat">
+                                    <span class="mac-stat-value">2.3%</span>
+                                    <span class="mac-stat-label">Churn Rate</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing" id="pricing">
+        <div class="pricing-header">
+            <h2 class="section-title">One price. Zero delays.</h2>
+            <p class="section-subtitle">Everything you need to outpace the competition.</p>
+        </div>
+        <div class="pricing-card">
+            <div class="pricing-badge">Most Popular</div>
+            <div class="pricing-amount">
+                <span class="price">$30</span>
+                <span class="period">/month</span>
+            </div>
+            <p class="pricing-description">Real-time data from every platform. No waiting.</p>
+            <ul class="pricing-features">
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Real-time analytics sync
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Unlimited data sources
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    AI Marketing & Sales assistants
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Founder community access
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Push notifications
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    iOS & macOS apps
+                </li>
+            </ul>
+            <a href="#download" class="btn btn-primary btn-full">Start Free Trial</a>
+            <p class="pricing-note">7-day free trial. Cancel anytime.</p>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section class="download" id="download">
+        <div class="download-content">
+            <h2 class="section-title">Stop waiting.<br>Start knowing.</h2>
+            <p class="section-subtitle">Get your app data in seconds, not days. Join thousands of developers who refuse to wait.</p>
+            <div class="download-buttons">
+                <a href="#" class="download-btn">
+                    <svg class="download-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 22 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09997 22C7.78997 22.05 6.79997 20.68 5.95997 19.47C4.24997 17 2.93997 12.45 4.69997 9.39C5.56997 7.87 7.12997 6.91 8.81997 6.88C10.1 6.86 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/>
+                    </svg>
+                    <div class="download-text">
+                        <span class="download-label">Download on the</span>
+                        <span class="download-store">App Store</span>
+                    </div>
+                </a>
+                <a href="#" class="download-btn">
+                    <svg class="download-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 22 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09997 22C7.78997 22.05 6.79997 20.68 5.95997 19.47C4.24997 17 2.93997 12.45 4.69997 9.39C5.56997 7.87 7.12997 6.91 8.81997 6.88C10.1 6.86 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/>
+                    </svg>
+                    <div class="download-text">
+                        <span class="download-label">Download for</span>
+                        <span class="download-store">macOS</span>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <a href="#" class="nav-logo">
+                    <img src="assets/logo.png" alt="Statly" class="logo-icon" width="32" height="32">
+                    <span>Statly</span>
+                </a>
+                <p class="footer-tagline">Real-time analytics for indie developers.</p>
+            </div>
+            <div class="footer-links">
+                <div class="footer-column">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="#download">Download</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Company</h4>
+                    <a href="#">About</a>
+                    <a href="#">Blog</a>
+                    <a href="#">Careers</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Support</h4>
+                    <a href="#">Help Center</a>
+                    <a href="#">Contact</a>
+                    <a href="#">Status</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Legal</h4>
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Statly. All rights reserved.</p>
+            <div class="footer-social">
+                <a href="#" aria-label="Twitter">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                </a>
+                <a href="#" aria-label="GitHub">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Scroll-based animations
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-in');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // Observe elements for scroll animations
+        document.querySelectorAll('.feature-card, .section-title, .section-subtitle, .pricing-card, .mac-mockup, .logo-item, .download-btn').forEach(el => {
+            el.classList.add('animate-on-scroll');
+            observer.observe(el);
+        });
+
+        // Stagger animation for feature cards
+        document.querySelectorAll('.feature-card').forEach((card, index) => {
+            card.style.animationDelay = `${index * 0.1}s`;
+        });
+
+        // Stagger animation for logo items
+        document.querySelectorAll('.logo-item').forEach((item, index) => {
+            item.style.animationDelay = `${index * 0.05}s`;
+        });
+
+        // Parallax effect on mouse move for hero section
+        const hero = document.querySelector('.hero');
+        const phoneMockup = document.querySelector('.phone-mockup');
+
+        if (hero && phoneMockup) {
+            hero.addEventListener('mousemove', (e) => {
+                const rect = hero.getBoundingClientRect();
+                const x = (e.clientX - rect.left - rect.width / 2) / rect.width;
+                const y = (e.clientY - rect.top - rect.height / 2) / rect.height;
+
+                phoneMockup.style.transform = `
+                    perspective(1000px)
+                    rotateY(${x * 5}deg)
+                    rotateX(${-y * 5}deg)
+                    scale(1)
+                `;
+            });
+
+            hero.addEventListener('mouseleave', () => {
+                phoneMockup.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) scale(1)';
+            });
+        }
+
+        // Smooth counter animation for stat values
+        const animateValue = (element, start, end, duration) => {
+            const range = end - start;
+            const startTime = performance.now();
+
+            const update = (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+                const current = Math.floor(start + range * easeProgress);
+
+                if (element.textContent.includes('$')) {
+                    element.textContent = '$' + current.toLocaleString();
+                } else if (element.textContent.includes('.')) {
+                    element.textContent = (current / 10).toFixed(1);
+                } else {
+                    element.textContent = current.toLocaleString();
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            };
+
+            requestAnimationFrame(update);
+        };
+
+        // Animate stat values when they come into view
+        const statObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const value = entry.target.textContent;
+                    let numValue;
+
+                    if (value.includes('$')) {
+                        numValue = parseInt(value.replace(/[$,]/g, ''));
+                    } else if (value.includes('.')) {
+                        numValue = parseFloat(value) * 10;
+                    } else {
+                        numValue = parseInt(value.replace(/,/g, ''));
+                    }
+
+                    if (!isNaN(numValue)) {
+                        animateValue(entry.target, 0, numValue, 1500);
+                    }
+                    statObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        document.querySelectorAll('.stat-value, .mac-stat-value').forEach(el => {
+            statObserver.observe(el);
+        });
+
+        // Add glow effect on scroll
+        let lastScrollY = window.scrollY;
+        window.addEventListener('scroll', () => {
+            const nav = document.querySelector('.nav');
+            if (window.scrollY > 50) {
+                nav.style.boxShadow = '0 0 30px rgba(167, 139, 250, 0.1)';
+            } else {
+                nav.style.boxShadow = 'none';
+            }
+            lastScrollY = window.scrollY;
+        });
+    </script>
+</body>
+</html>
