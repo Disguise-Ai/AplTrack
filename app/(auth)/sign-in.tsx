@@ -31,21 +31,21 @@ export default function SignInScreen() {
     setLoading(true);
     try {
       // Send OTP code to email
+      // Use shouldCreateUser: true to ensure email is always sent
+      // We'll check if user is new vs existing after verification
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
-          shouldCreateUser: false, // Don't create new users on sign-in
+          shouldCreateUser: true,
         },
       });
 
       if (error) {
-        if (error.message.includes('not found') || error.message.includes('invalid')) {
-          throw new Error('No account found with this email. Please sign up first.');
-        }
         throw error;
       }
 
       // Navigate to verify code screen with isSignIn flag
+      // This tells verify-code to check profile and route appropriately
       router.push({
         pathname: '/(auth)/verify-code',
         params: { email: email.trim().toLowerCase(), isSignIn: 'true' }

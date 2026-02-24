@@ -88,17 +88,10 @@ export default function VerifyCodeScreen() {
       if (data?.session && data?.user) {
         console.log('Verification successful! User:', data.user.id, 'isSignIn:', isSignIn);
 
-        // For sign-in users, go straight to dashboard (they're existing users)
-        if (isSignIn) {
-          console.log('Sign-in user - going to dashboard');
-          router.replace('/(tabs)/dashboard');
-          return;
-        }
-
-        // For sign-up users, check if they've completed onboarding
+        // Check if user has completed onboarding
         let shouldGoToDashboard = false;
         try {
-          console.log('Checking profile for sign-up user...');
+          console.log('Checking profile...');
           const profilePromise = getProfile(data.user.id);
           const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Profile timeout')), 3000)
@@ -113,21 +106,16 @@ export default function VerifyCodeScreen() {
 
         // Navigate based on profile status
         if (shouldGoToDashboard) {
-          console.log('Navigating to dashboard...');
+          console.log('Navigating to dashboard (existing user)...');
           router.replace('/(tabs)/dashboard');
         } else {
-          console.log('Navigating to onboarding...');
+          console.log('Navigating to onboarding (new user)...');
           router.replace('/(onboarding)/company');
         }
       } else {
-        // Session created but no user data
-        if (isSignIn) {
-          console.log('No session data but sign-in - going to dashboard');
-          router.replace('/(tabs)/dashboard');
-        } else {
-          console.log('No session data, going to onboarding');
-          router.replace('/(onboarding)/company');
-        }
+        // Session created but no user data - go to onboarding
+        console.log('No session data, going to onboarding');
+        router.replace('/(onboarding)/company');
       }
     } catch (error: any) {
       console.error('Verification error:', error.message || error);
@@ -161,9 +149,8 @@ export default function VerifyCodeScreen() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // Don't create new users for sign-in, only for sign-up
-          shouldCreateUser: !isSignIn,
-          data: isSignIn ? undefined : { full_name: fullName },
+          shouldCreateUser: true,
+          data: fullName ? { full_name: fullName } : undefined,
         },
       });
 
