@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, useColorScheme, TextInput, TouchableOpacity, Alert, Animated } from 'react-native';
+import { View, StyleSheet, useColorScheme, TextInput, TouchableOpacity, Alert, Animated, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,9 +13,10 @@ const CODE_LENGTH = 6;
 
 export default function VerifyCodeScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email: string; fullName: string }>();
+  const params = useLocalSearchParams<{ email: string; fullName: string; isSignIn: string }>();
   const email = params.email || '';
   const fullName = params.fullName || '';
+  const isSignIn = params.isSignIn === 'true';
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
@@ -23,6 +24,7 @@ export default function VerifyCodeScreen() {
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [codeComplete, setCodeComplete] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
@@ -39,10 +41,14 @@ export default function VerifyCodeScreen() {
     }
   }, [resendCooldown]);
 
-  // Auto-verify when code is complete
+  // Track when code is complete for visual feedback
   useEffect(() => {
     if (code.length === CODE_LENGTH) {
-      handleVerify();
+      setCodeComplete(true);
+      // Dismiss keyboard when code is complete so user can see Verify button
+      Keyboard.dismiss();
+    } else {
+      setCodeComplete(false);
     }
   }, [code]);
 
@@ -59,61 +65,87 @@ export default function VerifyCodeScreen() {
     if (code.length !== CODE_LENGTH || verifying) return;
 
     setVerifying(true);
-    try {
-      // Try verifying with 'email' type first, then 'signup' as fallback
-      let data, error;
+    console.log('Starting verification for:', email, 'with code:', code);
 
-      // First try 'email' type (for sign-in)
-      const result1 = await supabase.auth.verifyOtp({
+    try {
+      // Verify OTP with email type (used by signInWithOtp)
+      console.log('Verifying OTP...');
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: 'email',
       });
 
-      if (result1.error) {
-        // Try 'signup' type as fallback (for new accounts)
-        const result2 = await supabase.auth.verifyOtp({
-          email,
-          token: code,
-          type: 'signup',
-        });
-        data = result2.data;
-        error = result2.error;
-      } else {
-        data = result1.data;
-        error = result1.error;
-      }
+      console.log('Verify result - error:', error?.message, 'session:', !!data?.session);
 
       if (error) {
+        console.log('Verification failed:', error.message);
         shake();
         setCode('');
         throw error;
       }
 
       if (data?.session && data?.user) {
-        // Check if user has completed onboarding
+        console.log('Verification successful! User:', data.user.id, 'isSignIn:', isSignIn);
+
+        // For sign-in users, go straight to dashboard (they're existing users)
+        if (isSignIn) {
+          console.log('Sign-in user - going to dashboard');
+          router.replace('/(tabs)/dashboard');
+          return;
+        }
+
+        // For sign-up users, check if they've completed onboarding
+        let shouldGoToDashboard = false;
         try {
-          const profile = await getProfile(data.user.id);
-          if (profile?.onboarding_completed) {
-            router.replace('/(tabs)/dashboard');
-          } else {
-            router.replace('/(onboarding)/company');
-          }
-        } catch (profileError) {
-          // No profile yet, go to onboarding
+          console.log('Checking profile for sign-up user...');
+          const profilePromise = getProfile(data.user.id);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Profile timeout')), 3000)
+          );
+          const profile = await Promise.race([profilePromise, timeoutPromise]) as any;
+          console.log('Profile result:', profile?.onboarding_completed);
+          shouldGoToDashboard = profile?.onboarding_completed === true;
+        } catch (profileError: any) {
+          console.log('Profile check failed:', profileError?.message);
+          shouldGoToDashboard = false;
+        }
+
+        // Navigate based on profile status
+        if (shouldGoToDashboard) {
+          console.log('Navigating to dashboard...');
+          router.replace('/(tabs)/dashboard');
+        } else {
+          console.log('Navigating to onboarding...');
           router.replace('/(onboarding)/company');
         }
       } else {
-        // Session created but no user data - still try to navigate
-        router.replace('/(onboarding)/company');
+        // Session created but no user data
+        if (isSignIn) {
+          console.log('No session data but sign-in - going to dashboard');
+          router.replace('/(tabs)/dashboard');
+        } else {
+          console.log('No session data, going to onboarding');
+          router.replace('/(onboarding)/company');
+        }
       }
     } catch (error: any) {
-      console.error('Verification error:', error);
+      console.error('Verification error:', error.message || error);
       shake();
       setCode('');
+
+      let errorMessage = 'The code you entered is incorrect or has expired. Please try again.';
+      if (error.message?.includes('Invalid') || error.message?.includes('invalid')) {
+        errorMessage = 'Invalid code. Please check and try again.';
+      } else if (error.message?.includes('expired')) {
+        errorMessage = 'This code has expired. Please request a new one.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       Alert.alert(
         'Verification Failed',
-        error.message || 'The code you entered is incorrect or has expired. Please try again.',
+        errorMessage,
         [{ text: 'OK', onPress: () => inputRef.current?.focus() }]
       );
     } finally {
@@ -129,8 +161,9 @@ export default function VerifyCodeScreen() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          shouldCreateUser: true,
-          data: { full_name: fullName },
+          // Don't create new users for sign-in, only for sign-up
+          shouldCreateUser: !isSignIn,
+          data: isSignIn ? undefined : { full_name: fullName },
         },
       });
 
@@ -158,15 +191,16 @@ export default function VerifyCodeScreen() {
     for (let i = 0; i < CODE_LENGTH; i++) {
       const isFilled = i < code.length;
       const isActive = i === code.length;
+      const isComplete = codeComplete || verifying;
       boxes.push(
         <View
           key={i}
           style={[
             styles.codeBox,
             {
-              backgroundColor: colors.surface,
-              borderColor: isActive ? colors.primary : isFilled ? colors.primary + '50' : colors.border,
-              borderWidth: isActive ? 2 : 1,
+              backgroundColor: isComplete ? colors.primary + '15' : colors.surface,
+              borderColor: isComplete ? colors.primary : isActive ? colors.primary : isFilled ? colors.primary + '50' : colors.border,
+              borderWidth: isActive || isComplete ? 2 : 1,
             }
           ]}
         >
@@ -181,11 +215,16 @@ export default function VerifyCodeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
-      </TouchableOpacity>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
 
-      <View style={styles.content}>
+        <View style={styles.content}>
         <View style={[styles.iconContainer, { backgroundColor: colors.primary + '15' }]}>
           <Ionicons name="shield-checkmark" size={64} color={colors.primary} />
         </View>
@@ -231,37 +270,51 @@ export default function VerifyCodeScreen() {
           </Animated.View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.resendButton}
-          onPress={handleResend}
-          disabled={resending || resendCooldown > 0}
-        >
-          {resending ? (
-            <Text variant="label" color="secondary">Sending...</Text>
-          ) : resendCooldown > 0 ? (
-            <Text variant="label" color="secondary">Resend code in {resendCooldown}s</Text>
-          ) : (
-            <Text variant="label" color="accent">Didn't receive code? Resend</Text>
-          )}
-        </TouchableOpacity>
+        {verifying ? (
+          <View style={styles.verifyingContainer}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+            <Text variant="label" style={{ color: colors.primary, marginLeft: 8 }}>
+              Verifying...
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.resendButton}
+            onPress={handleResend}
+            disabled={resending || resendCooldown > 0}
+          >
+            {resending ? (
+              <Text variant="label" color="secondary">Sending...</Text>
+            ) : resendCooldown > 0 ? (
+              <Text variant="label" color="secondary">Resend code in {resendCooldown}s</Text>
+            ) : (
+              <Text variant="label" color="accent">Didn't receive code? Resend</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
-      <View style={styles.buttons}>
-        <Button
-          title={verifying ? "Verifying..." : "Verify"}
-          onPress={handleVerify}
-          loading={verifying}
-          disabled={code.length !== CODE_LENGTH}
-          size="large"
-          style={styles.button}
-        />
-      </View>
+        <View style={styles.buttons}>
+          <Button
+            title={verifying ? "Verifying..." : "Verify Code"}
+            onPress={() => {
+              Keyboard.dismiss();
+              handleVerify();
+            }}
+            loading={verifying}
+            disabled={code.length !== CODE_LENGTH || verifying}
+            size="large"
+            style={styles.button}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  keyboardAvoid: { flex: 1 },
   backButton: {
     width: 44,
     height: 44,
@@ -315,6 +368,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resendButton: {
+    paddingVertical: 12,
+  },
+  verifyingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
   },
   buttons: {

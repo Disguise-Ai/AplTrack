@@ -45,10 +45,10 @@ export default function SignInScreen() {
         throw error;
       }
 
-      // Navigate to verify code screen
+      // Navigate to verify code screen with isSignIn flag
       router.push({
         pathname: '/(auth)/verify-code',
-        params: { email: email.trim().toLowerCase() }
+        params: { email: email.trim().toLowerCase(), isSignIn: 'true' }
       });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to send verification code. Please try again.');
