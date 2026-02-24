@@ -66,7 +66,7 @@ export default function SettingsScreen() {
     try {
       await purchase(monthlyPackage);
       setShowPaywall(false);
-      Alert.alert('Success', 'Welcome to AplTrack Premium!');
+      Alert.alert('Success', 'Welcome to Statly Premium!');
     } catch (error: any) {
       if (error.message !== 'Purchase cancelled') {
         Alert.alert('Error', error.message || 'Purchase failed. Please try again.');
@@ -194,7 +194,7 @@ export default function SettingsScreen() {
         </View>
 
         <Button title="Sign Out" onPress={handleSignOut} variant="outline" style={styles.signOutButton} />
-        <Text variant="caption" color="secondary" align="center" style={styles.version}>AplTrack v1.0.0</Text>
+        <Text variant="caption" color="secondary" align="center" style={styles.version}>Statly v1.0.0</Text>
       </ScrollView>
 
       {/* Edit Name Modal */}
@@ -238,7 +238,7 @@ export default function SettingsScreen() {
             <View style={[styles.paywallIcon, { backgroundColor: colors.primary }]}>
               <Ionicons name="diamond" size={48} color="#FFFFFF" />
             </View>
-            <Text variant="title" weight="bold" align="center" style={styles.paywallTitle}>AplTrack Premium</Text>
+            <Text variant="title" weight="bold" align="center" style={styles.paywallTitle}>Statly Premium</Text>
             <Text variant="body" color="secondary" align="center" style={styles.paywallSubtitle}>Unlock the full power of app analytics</Text>
             <View style={styles.features}>
               <PaywallFeature icon="sync-outline" title="Real-time Analytics Sync" description="Get live updates from App Store Connect" />

@@ -36,7 +36,7 @@ export default function Index() {
       <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
         <Ionicons name="analytics" size={40} color="white" />
       </View>
-      <Text variant="title" weight="bold" style={styles.appName}>AplTrack</Text>
+      <Text variant="title" weight="bold" style={styles.appName}>Statly</Text>
       <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
     </View>
   );

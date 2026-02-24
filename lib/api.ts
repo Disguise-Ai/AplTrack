@@ -3,7 +3,8 @@ import type { Profile, ConnectedApp, AnalyticsSnapshot, AttributionData, ChatMes
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-  if (error) throw error;
+  // PGRST116 = "no rows returned" which is expected for new users
+  if (error && error.code !== 'PGRST116') throw error;
   return data;
 }
 
@@ -320,16 +321,27 @@ export async function getRealtimeMetrics(userId: string, startDate?: string, end
     const today = new Date().toISOString().split('T')[0];
     const defaultStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
+    console.log('[getRealtimeMetrics] Fetching for user:', userId);
+
     // First get user's connected apps
-    const { data: apps } = await supabase
+    const { data: apps, error: appsError } = await supabase
       .from('connected_apps')
       .select('id')
       .eq('user_id', userId)
       .eq('is_active', true);
 
-    if (!apps || apps.length === 0) return [];
+    if (appsError) {
+      console.log('[getRealtimeMetrics] Apps error:', appsError.message);
+      return [];
+    }
+
+    if (!apps || apps.length === 0) {
+      console.log('[getRealtimeMetrics] No connected apps found');
+      return [];
+    }
 
     const appIds = apps.map(a => a.id);
+    console.log('[getRealtimeMetrics] Found apps:', appIds.length);
 
     const { data, error } = await supabase
       .from('realtime_metrics')
@@ -340,12 +352,20 @@ export async function getRealtimeMetrics(userId: string, startDate?: string, end
       .order('metric_date', { ascending: false });
 
     if (error) {
-      console.log('Realtime metrics error:', error.message);
+      console.log('[getRealtimeMetrics] Metrics error:', error.message);
       return [];
     }
+
+    console.log('[getRealtimeMetrics] Got metrics:', data?.length || 0);
+    if (data && data.length > 0) {
+      // Log downloads specifically
+      const downloads = data.filter(m => m.metric_type === 'downloads' || m.metric_type === 'new_customers');
+      console.log('[getRealtimeMetrics] Download metrics:', downloads.map(d => ({ date: d.metric_date, value: d.metric_value })));
+    }
+
     return data || [];
   } catch (err: any) {
-    console.log('Realtime metrics failed:', err.message);
+    console.log('[getRealtimeMetrics] Failed:', err.message);
     return [];
   }
 }
@@ -422,4 +442,194 @@ export async function getMetricsHistory(userId: string, metricType: string, days
   return Object.entries(byDate)
     .map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ============ SMART LINKS & ATTRIBUTION ============
+
+export interface TrackingLink {
+  id: string;
+  user_id: string;
+  app_slug: string;
+  app_name?: string;
+  app_store_url?: string;
+  created_at: string;
+}
+
+export interface AttributionStats {
+  source: string;
+  clicks: number;
+  installs: number;
+  revenue: number;
+}
+
+// Get or create tracking link for user
+export async function getOrCreateTrackingLink(userId: string, appName?: string, appStoreUrl?: string): Promise<TrackingLink> {
+  // First try to get existing link
+  const { data: existing } = await supabase
+    .from('tracking_links')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (existing) {
+    // Update if app name or URL provided
+    if (appName || appStoreUrl) {
+      const { data: updated } = await supabase
+        .from('tracking_links')
+        .update({
+          app_name: appName || existing.app_name,
+          app_store_url: appStoreUrl || existing.app_store_url,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      return updated || existing;
+    }
+    return existing;
+  }
+
+  // Create new link
+  const slug = (appName || userId.substring(0, 8))
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  const { data: newLink, error } = await supabase
+    .from('tracking_links')
+    .insert({
+      user_id: userId,
+      app_slug: slug,
+      app_name: appName,
+      app_store_url: appStoreUrl,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Slug might be taken, try with random suffix
+    const slugWithSuffix = `${slug}${Math.random().toString(36).substring(2, 6)}`;
+    const { data: retryLink, error: retryError } = await supabase
+      .from('tracking_links')
+      .insert({
+        user_id: userId,
+        app_slug: slugWithSuffix,
+        app_name: appName,
+        app_store_url: appStoreUrl,
+      })
+      .select()
+      .single();
+
+    if (retryError) throw retryError;
+    return retryLink;
+  }
+
+  return newLink;
+}
+
+// Get attribution stats for user
+export async function getAttributionStats(userId: string, days: number = 30): Promise<AttributionStats[]> {
+  try {
+    // Get user's tracking link
+    const { data: link } = await supabase
+      .from('tracking_links')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (!link) return [];
+
+    const startDate = new Date(Date.now() - days * 86400000).toISOString();
+
+    // Get clicks grouped by source
+    const { data: clicks } = await supabase
+      .from('link_clicks')
+      .select('source')
+      .eq('link_id', link.id)
+      .gte('clicked_at', startDate);
+
+    // Get installs grouped by source
+    const { data: installs } = await supabase
+      .from('install_attributions')
+      .select('source, revenue')
+      .eq('link_id', link.id)
+      .gte('attributed_at', startDate);
+
+    // Aggregate stats
+    const statsMap: Record<string, AttributionStats> = {};
+
+    // Count clicks
+    for (const click of clicks || []) {
+      const source = click.source || 'direct';
+      if (!statsMap[source]) {
+        statsMap[source] = { source, clicks: 0, installs: 0, revenue: 0 };
+      }
+      statsMap[source].clicks++;
+    }
+
+    // Count installs and revenue
+    for (const install of installs || []) {
+      const source = install.source || 'direct';
+      if (!statsMap[source]) {
+        statsMap[source] = { source, clicks: 0, installs: 0, revenue: 0 };
+      }
+      statsMap[source].installs++;
+      statsMap[source].revenue += Number(install.revenue) || 0;
+    }
+
+    // Sort by clicks descending
+    return Object.values(statsMap).sort((a, b) => b.clicks - a.clicks);
+  } catch (error) {
+    console.error('Error getting attribution stats:', error);
+    return [];
+  }
+}
+
+// Get total attribution metrics
+export async function getAttributionTotals(userId: string, days: number = 30): Promise<{
+  totalClicks: number;
+  totalInstalls: number;
+  totalRevenue: number;
+}> {
+  const stats = await getAttributionStats(userId, days);
+
+  return {
+    totalClicks: stats.reduce((sum, s) => sum + s.clicks, 0),
+    totalInstalls: stats.reduce((sum, s) => sum + s.installs, 0),
+    totalRevenue: stats.reduce((sum, s) => sum + s.revenue, 0),
+  };
+}
+
+// Get click history for charts
+export async function getClickHistory(userId: string, days: number = 30): Promise<{ date: string; clicks: number }[]> {
+  try {
+    const { data: link } = await supabase
+      .from('tracking_links')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (!link) return [];
+
+    const startDate = new Date(Date.now() - days * 86400000).toISOString();
+
+    const { data: clicks } = await supabase
+      .from('link_clicks')
+      .select('clicked_at')
+      .eq('link_id', link.id)
+      .gte('clicked_at', startDate);
+
+    // Group by date
+    const byDate: Record<string, number> = {};
+    for (const click of clicks || []) {
+      const date = click.clicked_at.split('T')[0];
+      byDate[date] = (byDate[date] || 0) + 1;
+    }
+
+    return Object.entries(byDate)
+      .map(([date, clicks]) => ({ date, clicks }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch (error) {
+    console.error('Error getting click history:', error);
+    return [];
+  }
 }

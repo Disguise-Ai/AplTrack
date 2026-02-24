@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, useColorScheme, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, useColorScheme, Animated, Dimensions, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,16 +31,15 @@ export default function WelcomeScreen() {
       <View style={styles.content}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-          <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
-            <View style={styles.logoInner}>
-              <View style={[styles.logoRing, styles.logoRing1]} />
-              <View style={[styles.logoRing, styles.logoRing2]} />
-              <View style={styles.logoCenter} />
-              <View style={styles.logoLine} />
-            </View>
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('@/assets/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <Text variant="largeTitle" weight="bold" align="center" style={styles.appName}>
-            AplTrack
+            Statly
           </Text>
           <Text variant="body" color="secondary" align="center" style={styles.tagline}>
             Real-time analytics for indie developers
@@ -100,6 +99,7 @@ export default function WelcomeScreen() {
         <Button
           title="Get Started — It's Free"
           onPress={() => router.push('/(auth)/sign-up')}
+          variant="accent"
           size="large"
           style={styles.button}
         />
@@ -143,24 +143,17 @@ const styles = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center' },
   heroSection: { alignItems: 'center', marginBottom: 32 },
   logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    marginBottom: 16,
   },
-  logoInner: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
-  logoRing: { position: 'absolute', borderWidth: 3, borderColor: 'white', borderRadius: 100 },
-  logoRing1: { width: 50, height: 50, borderBottomColor: 'transparent', borderLeftColor: 'transparent' },
-  logoRing2: { width: 34, height: 34, borderBottomColor: 'transparent', borderLeftColor: 'transparent' },
-  logoCenter: { width: 10, height: 10, borderRadius: 5, backgroundColor: 'white' },
-  logoLine: { position: 'absolute', width: 3, height: 20, backgroundColor: 'white', bottom: 0, borderRadius: 2 },
+  logoImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 28,
+  },
   appName: { marginBottom: 4 },
   tagline: { marginBottom: 8 },
   statsPreview: {

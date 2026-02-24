@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
@@ -26,6 +26,7 @@ const DATA_SOURCE_INFO: Record<string, { name: string; icon: string; color: stri
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ refresh?: string }>();
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { user, profile } = useAuth();
@@ -34,6 +35,7 @@ export default function DashboardScreen() {
   const [connectedSources, setConnectedSources] = useState<ConnectedApp[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const hasRefreshedOnLogin = useRef(false);
 
   // Use connected sources from local state OR from useAnalytics apps
   const hasConnectedSources = connectedSources.length > 0 || apps.length > 0;
@@ -63,21 +65,45 @@ export default function DashboardScreen() {
     }
   }, [user]);
 
-  // Auto-refresh every 30 seconds for live data (uses API key to pull latest)
+  // Auto-refresh on sign-in (when coming from verify-code screen)
+  useEffect(() => {
+    if (user && params.refresh === 'true' && !hasRefreshedOnLogin.current) {
+      hasRefreshedOnLogin.current = true;
+      console.log('[Dashboard] User signed in, refreshing data...');
+
+      // Refresh subscription status
+      refreshSubscription();
+
+      // Sync analytics data
+      syncAnalytics().then(() => {
+        console.log('[Dashboard] Initial sync complete');
+        setLastSyncTime(new Date());
+      });
+
+      // Sync from data sources in background
+      syncAllDataSources(user.id).then(() => {
+        console.log('[Dashboard] Background sync from sources complete');
+        syncAnalytics();
+        setLastSyncTime(new Date());
+      }).catch(() => {});
+    }
+  }, [user, params.refresh]);
+
+  // Auto-refresh every 10 minutes for live data (runs in background)
   useEffect(() => {
     if (!user || !hasConnectedSources) return;
 
-    const refreshData = async () => {
-      try {
-        await syncAllDataSources(user.id);
-        await loadConnectedSources();
-        await syncAnalytics();
-      } catch (e) {
-        // Silent refresh, don't show errors
-      }
+    const refreshData = () => {
+      console.log('[Dashboard] Auto-refresh triggered');
+      // Don't await - let it run in background
+      syncAllDataSources(user.id)
+        .then(() => syncAnalytics())
+        .then(() => setLastSyncTime(new Date()))
+        .catch(() => {});
     };
 
-    const interval = setInterval(refreshData, 30000); // Every 30 seconds
+    // Refresh every 10 minutes (600000ms)
+    const interval = setInterval(refreshData, 600000);
 
     return () => clearInterval(interval);
   }, [user, hasConnectedSources]);
@@ -95,24 +121,29 @@ export default function DashboardScreen() {
   const handleSync = async () => {
     setRefreshing(true);
 
-    // Force stop refreshing after 5 seconds no matter what
+    // Force stop refreshing after 3 seconds no matter what
     const forceStopTimeout = setTimeout(() => {
+      console.log('[Dashboard] Force stopping refresh');
       setRefreshing(false);
-    }, 5000);
+    }, 3000);
 
     try {
       if (user) {
-        // Run all refreshes in parallel with individual timeouts
-        await Promise.allSettled([
-          refreshSubscription().catch(() => {}),
-          syncAllDataSources(user.id).catch(() => {}),
-          loadConnectedSources().catch(() => {}),
-          syncAnalytics().catch(() => {}),
-        ]);
-        setLastSyncTime(new Date());
+        // Load existing data from database FIRST (fast)
+        await syncAnalytics();
+        console.log('[Dashboard] Data loaded');
+        setRefreshing(false);
+        clearTimeout(forceStopTimeout);
+
+        // Then sync from RevenueCat in background (slow, don't wait)
+        syncAllDataSources(user.id).then(() => {
+          console.log('[Dashboard] Background sync complete');
+          syncAnalytics(); // Reload after sync
+          setLastSyncTime(new Date());
+        }).catch(() => {});
       }
     } catch (error: any) {
-      console.log('Sync error:', error.message);
+      console.log('[Dashboard] Error:', error.message);
     } finally {
       clearTimeout(forceStopTimeout);
       setRefreshing(false);

@@ -374,7 +374,17 @@ export default function DataSourcesScreen() {
                       <View style={styles.connectedStatus}>
                         <View style={[styles.statusDot, { backgroundColor: '#4CAF50' }]} />
                         <Text variant="caption" color="secondary">Connected</Text>
+                        {app.last_sync_at && (
+                          <Text variant="caption" color="tertiary" style={{ marginLeft: 8 }}>
+                            • Synced {new Date(app.last_sync_at).toLocaleDateString()}
+                          </Text>
+                        )}
                       </View>
+                      {app.credentials?.project_id && (
+                        <Text variant="caption" color="tertiary" style={{ marginTop: 2 }}>
+                          Project: {app.credentials.project_id.substring(0, 12)}...
+                        </Text>
+                      )}
                     </View>
                     <View style={styles.actionButtons}>
                       <TouchableOpacity

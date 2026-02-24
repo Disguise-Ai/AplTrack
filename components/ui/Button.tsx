@@ -5,7 +5,7 @@ import { Colors } from '@/constants/Colors';
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'accent';
   size?: 'small' | 'medium' | 'large';
   disabled?: boolean;
   loading?: boolean;
@@ -33,6 +33,8 @@ export function Button({
     switch (variant) {
       case 'primary':
         return colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+      case 'accent':
+        return '#8B5CF6'; // Purple
       case 'secondary':
         return colors.card;
       case 'outline':
@@ -48,6 +50,8 @@ export function Button({
     switch (variant) {
       case 'primary':
         return colorScheme === 'dark' ? '#000000' : '#FFFFFF';
+      case 'accent':
+        return '#FFFFFF';
       case 'secondary':
         return colors.text;
       case 'outline':

@@ -95,16 +95,37 @@ export function useAuth() {
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (!state.user) return;
+    let userId = state.user?.id;
+
+    if (!userId) {
+      // State might not be synced yet, check session directly
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    if (!userId) return;
+
     try {
-      const profile = await getProfile(state.user.id);
+      const profile = await getProfile(userId);
       setState((prev) => ({ ...prev, profile }));
     } catch (error) { console.error('Error refreshing profile:', error); }
   }, [state.user]);
 
   const updateUserProfile = useCallback(async (updates: Partial<Profile>) => {
-    if (!state.user) throw new Error('No user logged in');
-    const profile = await updateProfile(state.user.id, updates);
+    // Try state.user first, then check current session directly
+    let userId = state.user?.id;
+
+    if (!userId) {
+      // State might not be synced yet, check session directly
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    if (!userId) {
+      throw new Error('No user logged in');
+    }
+
+    const profile = await updateProfile(userId, updates);
     setState((prev) => ({ ...prev, profile }));
     return profile;
   }, [state.user]);
