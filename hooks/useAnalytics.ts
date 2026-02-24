@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { getConnectedApps, getAnalytics, getLatestAnalytics, getAttribution, syncAllDataSources, getRealtimeMetrics, type RealtimeMetric } from '@/lib/api';
 import type { ConnectedApp, AnalyticsSnapshot, AttributionData } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 import { updateWidgetData } from '@/lib/widgetData';
 
@@ -231,6 +232,30 @@ export function useAnalytics() {
       // Just load data from database - don't call external APIs here
       console.log('[syncAnalytics] Loading data for user:', user.id);
 
+      // First, refetch 28d totals
+      const { data: apps } = await supabase
+        .from('connected_apps')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (apps?.length) {
+        const appIds = apps.map(a => a.id);
+        const { data: totalsMetrics } = await supabase
+          .from('realtime_metrics')
+          .select('metric_type, metric_value')
+          .in('app_id', appIds)
+          .in('metric_type', ['downloads_28d', 'revenue_28d']);
+
+        let downloads = 0, revenue = 0;
+        for (const m of totalsMetrics || []) {
+          if (m.metric_type === 'downloads_28d') downloads = m.metric_value;
+          if (m.metric_type === 'revenue_28d') revenue = m.metric_value;
+        }
+        setTotals28d({ downloads, revenue });
+        console.log('[syncAnalytics] Updated 28d totals:', { downloads, revenue });
+      }
+
       // Load realtime metrics from database
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -301,62 +326,85 @@ export function useAnalytics() {
     }
   }, [user]);
 
+  // Store 28d totals from special metrics
+  const [totals28d, setTotals28d] = useState({ downloads: 0, revenue: 0 });
+
+  // Fetch 28d totals directly from realtime_metrics
+  useEffect(() => {
+    if (!user) return;
+    const fetch28dTotals = async () => {
+      try {
+        const { data: apps } = await supabase
+          .from('connected_apps')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+
+        if (!apps?.length) return;
+
+        const appIds = apps.map(a => a.id);
+        const { data: metrics } = await supabase
+          .from('realtime_metrics')
+          .select('metric_type, metric_value')
+          .in('app_id', appIds)
+          .in('metric_type', ['downloads_28d', 'revenue_28d']);
+
+        let downloads = 0, revenue = 0;
+        for (const m of metrics || []) {
+          if (m.metric_type === 'downloads_28d') downloads = m.metric_value;
+          if (m.metric_type === 'revenue_28d') revenue = m.metric_value;
+        }
+        setTotals28d({ downloads, revenue });
+        console.log('[useAnalytics] 28d totals from DB:', { downloads, revenue });
+      } catch (e) {
+        console.error('[useAnalytics] Error fetching 28d totals:', e);
+      }
+    };
+    fetch28dTotals();
+  }, [user, state.apps]);
+
   const stats = useMemo(() => {
-    if (!state.analytics.length) return { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, totalDownloads: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, totalRevenue: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
+    const defaultStats = { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, totalDownloads: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, totalRevenue: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
 
+    // Use EXACT 28d totals from database (not calculated)
+    const totalDownloads = totals28d.downloads;
+    const totalRevenue = totals28d.revenue;
+
+    // Calculate daily/weekly from exact totals
+    const dailyAvgDownloads = totalDownloads / 28;
+    const dailyAvgRevenue = totalRevenue / 28;
+    const weeklyDownloads = Math.round(dailyAvgDownloads * 7);
+    const weeklyRevenue = dailyAvgRevenue * 7;
+
+    // Get active users from analytics
     const today = state.analytics[state.analytics.length - 1];
-    const lastWeek = state.analytics.slice(-7);
-    const lastMonth = state.analytics;
-
-    // Calculate from analytics data
-    const downloadsWeekCalc = lastWeek.reduce((sum, s) => sum + s.downloads, 0);
-    const downloadsMonthCalc = lastMonth.reduce((sum, s) => sum + s.downloads, 0);
-    const revenueWeekCalc = lastWeek.reduce((sum, s) => sum + s.revenue, 0);
-    const revenueMonthCalc = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
-
-    // For 28-day totals, use exact value (28 days of data)
-    // Downloads: sum all days, but use floor to avoid showing more than actual
-    const totalDownloads28d = Math.floor(lastMonth.reduce((sum, s) => sum + s.downloads, 0));
-    const totalRevenue28d = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
-
-    // Daily values from today's snapshot
-    const downloadsToday = Math.round(today?.downloads || 0);
-    const revenueToday = today?.revenue || 0;
-
-    // Weekly = 7 days worth
-    const downloadsWeek = Math.round(downloadsWeekCalc);
-    const revenueWeek = revenueWeekCalc;
-
-    const previousWeek = state.analytics.slice(-14, -7);
-    const previousWeekDownloads = previousWeek.reduce((sum, s) => sum + s.downloads, 0);
-    const previousWeekRevenue = previousWeek.reduce((sum, s) => sum + s.revenue, 0);
+    const activeUsers = today?.active_users || 0;
 
     const stats = {
-      downloadsToday,
-      downloadsWeek,
-      downloadsMonth: totalDownloads28d,
-      totalDownloads: totalDownloads28d,
-      revenueToday,
-      revenueWeek,
-      revenueMonth: totalRevenue28d,
-      totalRevenue: totalRevenue28d,
-      activeUsers: today?.active_users || 0,
+      downloadsToday: Math.round(dailyAvgDownloads),
+      downloadsWeek: weeklyDownloads,
+      downloadsMonth: totalDownloads,
+      totalDownloads: totalDownloads,
+      revenueToday: dailyAvgRevenue,
+      revenueWeek: weeklyRevenue,
+      revenueMonth: totalRevenue,
+      totalRevenue: totalRevenue,
+      activeUsers,
       averageRating: today?.average_rating || 0,
-      ratingsCount: lastMonth.reduce((sum, s) => sum + s.ratings_count, 0),
-      downloadsChange: previousWeekDownloads ? ((downloadsWeek - previousWeekDownloads) / previousWeekDownloads) * 100 : 0,
-      revenueChange: previousWeekRevenue ? ((revenueWeek - previousWeekRevenue) / previousWeekRevenue) * 100 : 0
+      ratingsCount: 0,
+      downloadsChange: 0,
+      revenueChange: 0
     };
 
-    console.log('[useAnalytics] Stats computed:', {
-      downloadsToday: stats.downloadsToday,
-      downloadsWeek: stats.downloadsWeek,
+    console.log('[useAnalytics] Stats (from exact 28d totals):', {
       totalDownloads: stats.totalDownloads,
-      revenueToday: stats.revenueToday,
-      totalRevenue: stats.totalRevenue
+      totalRevenue: stats.totalRevenue,
+      downloadsToday: stats.downloadsToday,
+      revenueToday: stats.revenueToday
     });
 
     return stats;
-  }, [state.analytics]);
+  }, [state.analytics, totals28d]);
 
   // Update widget data when stats change
   const prevStatsRef = useRef<typeof stats | null>(null);

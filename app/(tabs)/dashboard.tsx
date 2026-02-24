@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
@@ -64,6 +64,17 @@ export default function DashboardScreen() {
       loadConnectedSources();
     }
   }, [user]);
+
+  // Refresh data when screen comes into focus (e.g., returning from data-sources)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        console.log('[Dashboard] Screen focused, refreshing data');
+        loadConnectedSources();
+        syncAnalytics();
+      }
+    }, [user])
+  );
 
   // Auto-refresh on sign-in (when coming from verify-code screen)
   useEffect(() => {
