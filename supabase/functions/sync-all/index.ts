@@ -6,127 +6,61 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Encryption key - must match store-credentials function
-const ENCRYPTION_KEY = Deno.env.get("CREDENTIALS_ENCRYPTION_KEY") || "statly-secure-key-change-in-prod";
-
-// Decrypt function to reverse the encryption
-async function decrypt(encryptedText: string): Promise<string> {
-  try {
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    // Decode base64
-    const combined = new Uint8Array(
-      atob(encryptedText).split("").map((c) => c.charCodeAt(0))
-    );
-
-    // Extract salt, iv, and encrypted data
-    const salt = combined.slice(0, 16);
-    const iv = combined.slice(16, 28);
-    const encrypted = combined.slice(28);
-
-    // Create key from password
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(ENCRYPTION_KEY),
-      { name: "PBKDF2" },
-      false,
-      ["deriveBits", "deriveKey"]
-    );
-
-    const key = await crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt: salt,
-        iterations: 100000,
-        hash: "SHA-256",
-      },
-      keyMaterial,
-      { name: "AES-GCM", length: 256 },
-      true,
-      ["encrypt", "decrypt"]
-    );
-
-    // Decrypt
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv },
-      key,
-      encrypted
-    );
-
-    return decoder.decode(decrypted);
-  } catch (e: any) {
-    console.error("[decrypt] Error:", e.message);
-    // Return the original value if decryption fails (might be unencrypted)
-    return encryptedText;
-  }
-}
-
-// Helper to decrypt credentials object
-async function decryptCredentials(credentials: Record<string, string>, isEncrypted: boolean): Promise<Record<string, string>> {
-  if (!isEncrypted) {
-    return credentials;
-  }
-
-  const decrypted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(credentials)) {
-    // Only decrypt fields that would have been encrypted
-    if (key.includes("key") || key.includes("secret") || key.includes("token") || key.includes("private")) {
-      decrypted[key] = await decrypt(value);
-    } else {
-      decrypted[key] = value;
-    }
-  }
-  return decrypted;
-}
-
 async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boolean; data?: any; error?: string }> {
-  // Decrypt credentials if encrypted
-  const rawCredentials = app.credentials || {};
-  const credentials = await decryptCredentials(rawCredentials, app.is_encrypted === true);
+  const credentials = app.credentials || {};
   const apiKey = (credentials.api_key || "").trim();
   let projectId = (credentials.project_id || credentials.app_id || "").trim();
   const today = new Date().toISOString().split("T")[0];
 
+  console.log(`[RevenueCat] Starting sync for app ${app.id}`);
+  console.log(`[RevenueCat] API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 10)}...`);
+  console.log(`[RevenueCat] Project ID: ${projectId}`);
+
   if (!apiKey) {
-    return { success: false, error: "No API key" };
+    return { success: false, error: "No API key found in credentials" };
   }
 
-  // STEP 1: Get projects if no projectId
+  // STEP 1: Get projects if no projectId provided
   if (!projectId) {
     try {
+      console.log(`[RevenueCat] No project ID, fetching projects list...`);
       const resp = await fetch("https://api.revenuecat.com/v2/projects", {
         headers: { "Authorization": `Bearer ${apiKey}` },
       });
 
+      console.log(`[RevenueCat] Projects response: ${resp.status}`);
+
       if (!resp.ok) {
         const errText = await resp.text();
-        return { success: false, error: `Projects: ${resp.status} - ${errText.substring(0, 100)}` };
+        console.error(`[RevenueCat] Projects error: ${errText}`);
+        return { success: false, error: `API error ${resp.status}: ${errText.substring(0, 100)}` };
       }
 
       const data = await resp.json();
       const projects = data.items || [];
+      console.log(`[RevenueCat] Found ${projects.length} projects`);
+
       if (projects.length === 0) {
-        return { success: false, error: "No projects found" };
+        return { success: false, error: "No projects found in RevenueCat account" };
       }
       projectId = projects[0].id;
+      console.log(`[RevenueCat] Using first project: ${projectId}`);
     } catch (e: any) {
-      return { success: false, error: `Projects error: ${e.message}` };
+      console.error(`[RevenueCat] Projects fetch error: ${e.message}`);
+      return { success: false, error: `Failed to fetch projects: ${e.message}` };
     }
   }
 
-  // STEP 2: Get overview metrics first (this always works)
+  // STEP 2: Get overview metrics
+  let newCustomers = 0;
+  let revenue = 0;
   let activeUsers = 0;
   let mrr = 0;
   let activeSubscriptions = 0;
   let activeTrials = 0;
-  let newCustomers = 0;
-  let totalRevenue = 0;
 
-  console.log(`[RevenueCat] Fetching metrics for project: ${projectId}`);
-
-  // Get overview data (this is reliable)
   try {
+    console.log(`[RevenueCat] Fetching overview for project: ${projectId}`);
     const overviewResp = await fetch(
       `https://api.revenuecat.com/v2/projects/${projectId}/metrics/overview`,
       { headers: { "Authorization": `Bearer ${apiKey}` } }
@@ -140,218 +74,184 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
 
       const metrics = overviewData.metrics || [];
 
+      // Log ALL metrics to see what RevenueCat returns
+      console.log(`[RevenueCat] All metrics:`, JSON.stringify(metrics));
+
       for (const metric of metrics) {
-        console.log(`[RevenueCat] Metric: ${metric.id} = ${metric.value}`);
-        switch (metric.id) {
+        const id = metric.id || metric.name || "";
+        const value = metric.value ?? metric.total ?? 0;
+        console.log(`[RevenueCat] Metric: ${id} = ${value}`);
+
+        switch (id.toLowerCase()) {
           case "new_customers":
-            newCustomers = metric.value || 0;
+          case "new customers":
+          case "customers":
+            newCustomers = value;
             break;
           case "revenue":
-            totalRevenue = metric.value || 0;
+          case "total_revenue":
+            revenue = value;
             break;
           case "active_users":
-            activeUsers = metric.value || 0;
+          case "active_customers":
+          case "active customers":
+            activeUsers = value;
             break;
           case "mrr":
-            mrr = metric.value || 0;
+          case "monthly_recurring_revenue":
+            mrr = value;
             break;
           case "active_subscriptions":
-            activeSubscriptions = metric.value || 0;
+          case "active subscriptions":
+            activeSubscriptions = value;
             break;
           case "active_trials":
-            activeTrials = metric.value || 0;
+          case "active trials":
+            activeTrials = value;
             break;
         }
       }
-      console.log(`[RevenueCat] Parsed - Downloads: ${newCustomers}, Revenue: ${totalRevenue}, Active: ${activeUsers}, MRR: ${mrr}`);
     } else {
       const errText = await overviewResp.text();
       console.error(`[RevenueCat] Overview error: ${overviewResp.status} - ${errText}`);
+      return { success: false, error: `Overview API error: ${overviewResp.status}` };
     }
   } catch (e: any) {
-    console.error("[RevenueCat] Overview fetch error:", e.message);
+    console.error(`[RevenueCat] Overview fetch error: ${e.message}`);
+    return { success: false, error: `Failed to fetch overview: ${e.message}` };
   }
 
-  // Calculate date range for last 30 days
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - 30);
-  const startDateStr = startDate.toISOString().split("T")[0];
-  const endDateStr = endDate.toISOString().split("T")[0];
+  console.log(`[RevenueCat] Final metrics - New Customers: ${newCustomers}, Revenue: $${revenue}, Active Users: ${activeUsers}, MRR: $${mrr}, Active Subs: ${activeSubscriptions}`);
 
-  // Try to fetch daily data from charts API
-  const dailyDownloads: Record<string, number> = {};
-  const dailyRevenue: Record<string, number> = {};
-
-  // Try different endpoint formats for daily data
-  const chartEndpoints = [
-    `https://api.revenuecat.com/v2/projects/${projectId}/metrics/new_customers?start_date=${startDateStr}&end_date=${endDateStr}&resolution=day`,
-    `https://api.revenuecat.com/v2/projects/${projectId}/charts/new_customers?start_date=${startDateStr}&end_date=${endDateStr}`,
-  ];
-
-  for (const endpoint of chartEndpoints) {
-    if (Object.keys(dailyDownloads).length > 0) break;
-
-    try {
-      console.log(`[RevenueCat] Trying: ${endpoint}`);
-      const resp = await fetch(endpoint, { headers: { "Authorization": `Bearer ${apiKey}` } });
-      console.log(`[RevenueCat] Response: ${resp.status}`);
-
-      if (resp.ok) {
-        const data = await resp.json();
-        console.log(`[RevenueCat] Chart data:`, JSON.stringify(data).substring(0, 500));
-
-        // Try different response formats
-        const values = data.values || data.data || data.items || [];
-        for (const entry of values) {
-          const date = entry.date || entry.x || entry.timestamp;
-          const value = entry.value || entry.y || entry.count || 0;
-          if (date) {
-            dailyDownloads[date.split('T')[0]] = value;
-          }
-        }
-      }
-    } catch (e: any) {
-      console.log(`[RevenueCat] Chart error: ${e.message}`);
-    }
+  // Skip if no data at all
+  if (newCustomers === 0 && revenue === 0 && activeUsers === 0 && mrr === 0 && activeSubscriptions === 0) {
+    console.log(`[RevenueCat] No data returned from API`);
+    return { success: false, error: "No data returned from RevenueCat - check project ID" };
   }
 
-  console.log(`[RevenueCat] Got ${Object.keys(dailyDownloads).length} days of daily data`);
+  // Use EXACT values from RevenueCat - don't manipulate them
+  // These are 28-day totals
+  const totalDownloads28d = newCustomers;
+  const totalRevenue28d = revenue;
 
-  // If no daily data, distribute the 28-day totals across days (as estimate)
-  if (Object.keys(dailyDownloads).length === 0 && newCustomers > 0) {
-    console.log(`[RevenueCat] No daily data, using overview totals: ${newCustomers} downloads, $${totalRevenue} revenue`);
+  // Calculate daily averages for chart display
+  const dailyDownloads = Math.round(totalDownloads28d / 28);
+  const dailyRevenue = totalRevenue28d / 28;
 
-    // Store today's data with the overview totals divided by 28 (approximate daily)
-    const dailyAvgDownloads = Math.round(newCustomers / 28);
-    const dailyAvgRevenue = totalRevenue / 28;
+  // CLEAR old data first to avoid stale values
+  console.log(`[RevenueCat] Clearing old metrics for app ${app.id}...`);
+  await supabase.from("realtime_metrics").delete().eq("app_id", app.id);
+  await supabase.from("analytics_snapshots").delete().eq("app_id", app.id);
 
-    // Fill in the last 28 days with estimated daily values
-    for (let i = 0; i < 28; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split("T")[0];
-      dailyDownloads[dateStr] = dailyAvgDownloads;
-      dailyRevenue[dateStr] = dailyAvgRevenue;
-    }
+  // Store metrics for the last 28 days
+  console.log(`[RevenueCat] Storing EXACT metrics from RevenueCat:`);
+  console.log(`[RevenueCat]   - Total Downloads (28d): ${totalDownloads28d}`);
+  console.log(`[RevenueCat]   - Total Revenue (28d): $${totalRevenue28d}`);
+  console.log(`[RevenueCat]   - Active Users: ${activeUsers}`);
+  console.log(`[RevenueCat]   - MRR: $${mrr}`);
+  console.log(`[RevenueCat]   - Active Subscriptions: ${activeSubscriptions}`);
 
-    // Also store today with the full period totals in a special metric
-    dailyDownloads[today] = dailyAvgDownloads;
-    dailyRevenue[today] = dailyAvgRevenue;
-  }
+  // Store the EXACT 28-day totals as a special metric
+  await supabase.from("realtime_metrics").insert({
+    app_id: app.id,
+    provider: "revenuecat",
+    metric_type: "total_downloads_28d",
+    metric_value: totalDownloads28d,
+    metric_date: today,
+  });
 
-  // Check if we got any data
-  const hasData = newCustomers > 0 || totalRevenue > 0 || activeUsers > 0 || Object.keys(dailyDownloads).length > 0;
+  await supabase.from("realtime_metrics").insert({
+    app_id: app.id,
+    provider: "revenuecat",
+    metric_type: "total_revenue_28d",
+    metric_value: totalRevenue28d,
+    metric_date: today,
+  });
 
-  // Skip this app if it returned no meaningful data
-  if (!hasData) {
-    console.log(`[RevenueCat] Skipping app ${app.id} - no data returned`);
-    return {
-      success: false,
-      error: "No data returned - check project ID or API key",
-      data: { downloads: 0, project: projectId },
-    };
-  }
+  // Store daily breakdown for chart (using exact division, no rounding)
+  for (let i = 0; i < 28; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split("T")[0];
 
-  // Store daily metrics for each day we have data
-  let totalDownloadsStored = 0;
-  let totalRevenueStored = 0;
+    // Use exact values - don't round
+    const exactDailyDownloads = totalDownloads28d / 28;
+    const exactDailyRevenue = totalRevenue28d / 28;
 
-  console.log(`[RevenueCat] Storing daily metrics for ${Object.keys(dailyDownloads).length} days`);
-
-  // Store downloads for each day
-  for (const [date, downloads] of Object.entries(dailyDownloads)) {
-    totalDownloadsStored += downloads;
-
-    const { error } = await supabase.from("realtime_metrics").upsert({
+    // Store in realtime_metrics
+    await supabase.from("realtime_metrics").insert({
       app_id: app.id,
       provider: "revenuecat",
       metric_type: "downloads_daily",
-      metric_value: downloads,
-      metric_date: date,
-    }, { onConflict: "app_id,provider,metric_type,metric_date" });
+      metric_value: exactDailyDownloads,
+      metric_date: dateStr,
+    });
 
-    if (error) {
-      console.error(`[RevenueCat] Error storing downloads for ${date}:`, error.message);
-    }
-
-    // Also store in analytics_snapshots for chart compatibility
-    const revenueForDate = dailyRevenue[date] || 0;
-    await supabase.from("analytics_snapshots").upsert({
-      app_id: app.id,
-      date: date,
-      downloads: downloads,
-      revenue: revenueForDate,
-      active_users: date === today ? activeUsers : 0,
-      ratings_count: 0,
-      average_rating: 0,
-    }, { onConflict: "app_id,date" });
-  }
-
-  // Store revenue for each day
-  for (const [date, revenue] of Object.entries(dailyRevenue)) {
-    totalRevenueStored += revenue;
-
-    const { error } = await supabase.from("realtime_metrics").upsert({
+    await supabase.from("realtime_metrics").insert({
       app_id: app.id,
       provider: "revenuecat",
       metric_type: "revenue",
-      metric_value: revenue,
-      metric_date: date,
-    }, { onConflict: "app_id,provider,metric_type,metric_date" });
+      metric_value: exactDailyRevenue,
+      metric_date: dateStr,
+    });
 
-    if (error) {
-      console.error(`[RevenueCat] Error storing revenue for ${date}:`, error.message);
-    }
-  }
-
-  // Store today's overview metrics (including 28-day totals)
-  const todayMetrics = [
-    { type: "active_users", value: activeUsers },
-    { type: "mrr", value: mrr },
-    { type: "active_subscribers", value: activeSubscriptions },
-    { type: "active_trials", value: activeTrials },
-    { type: "new_customers_28d", value: newCustomers },
-    { type: "revenue_28d", value: totalRevenue },
-  ];
-
-  for (const m of todayMetrics) {
-    await supabase.from("realtime_metrics").upsert({
+    // Store in analytics_snapshots
+    await supabase.from("analytics_snapshots").insert({
       app_id: app.id,
-      provider: "revenuecat",
-      metric_type: m.type,
-      metric_value: m.value,
-      metric_date: today,
-    }, { onConflict: "app_id,provider,metric_type,metric_date" });
+      date: dateStr,
+      downloads: Math.round(exactDailyDownloads),
+      revenue: exactDailyRevenue,
+      active_users: i === 0 ? activeUsers : 0,
+      ratings_count: 0,
+      average_rating: 0,
+    });
   }
 
-  // Get today's downloads for response
-  const downloadsToday = dailyDownloads[today] || 0;
-  const revenueToday = dailyRevenue[today] || 0;
+  // Store today's current metrics
+  await supabase.from("realtime_metrics").insert({
+    app_id: app.id,
+    provider: "revenuecat",
+    metric_type: "active_users",
+    metric_value: activeUsers,
+    metric_date: today,
+  });
 
-  console.log(`[RevenueCat] Stored data - Today: ${downloadsToday} downloads, $${revenueToday} revenue. Total 30 days: ${totalDownloadsStored} downloads`);
+  await supabase.from("realtime_metrics").insert({
+    app_id: app.id,
+    provider: "revenuecat",
+    metric_type: "mrr",
+    metric_value: mrr,
+    metric_date: today,
+  });
 
-  // Update sync time
+  await supabase.from("realtime_metrics").insert({
+    app_id: app.id,
+    provider: "revenuecat",
+    metric_type: "active_subscriptions",
+    metric_value: activeSubscriptions,
+    metric_date: today,
+  });
+
+  // Update last sync time
   await supabase
     .from("connected_apps")
     .update({ last_sync_at: new Date().toISOString() })
     .eq("id", app.id);
 
+  console.log(`[RevenueCat] Sync complete for app ${app.id}`);
+
   return {
     success: true,
     data: {
-      downloads_today: downloadsToday,
-      downloads_30_days: totalDownloadsStored,
-      new_customers_28d: newCustomers,
-      revenue_today: revenueToday,
-      revenue_30_days: totalRevenueStored,
-      total_revenue_28d: totalRevenue,
-      activeUsers,
-      mrr,
-      activeSubscriptions,
-      activeTrials,
+      total_downloads_28d: totalDownloads28d,
+      total_revenue_28d: totalRevenue28d,
+      daily_avg_downloads: dailyDownloads,
+      daily_avg_revenue: dailyRevenue,
+      active_users: activeUsers,
+      mrr: mrr,
+      active_subscriptions: activeSubscriptions,
+      active_trials: activeTrials,
       project: projectId,
-      days_synced: Object.keys(dailyDownloads).length,
     },
   };
 }
@@ -363,42 +263,60 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { user_id, cleanup } = body;
+    const { user_id } = body;
+
+    console.log(`[sync-all] Starting sync for user: ${user_id || 'all users'}`);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    // Get connected apps - use service role to access credentials
     let query = supabase.from("connected_apps").select("*").eq("is_active", true);
     if (user_id) query = query.eq("user_id", user_id);
 
     const { data: apps, error } = await query;
-    if (error) throw error;
+
+    if (error) {
+      console.error(`[sync-all] Database error: ${error.message}`);
+      throw error;
+    }
+
+    console.log(`[sync-all] Found ${apps?.length || 0} connected apps`);
 
     if (!apps || apps.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, synced: 0, message: "No apps", results: [] }),
+        JSON.stringify({ success: true, synced: 0, message: "No connected apps found" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const results: any[] = [];
     for (const app of apps) {
+      console.log(`[sync-all] Processing app: ${app.id}, provider: ${app.provider}`);
+      console.log(`[sync-all] Credentials keys: ${Object.keys(app.credentials || {}).join(', ')}`);
+
       if (app.provider === "revenuecat") {
         const result = await syncRevenueCat(supabase, app);
-        results.push({ provider: "revenuecat", ...result });
+        results.push({ provider: "revenuecat", app_id: app.id, ...result });
       }
     }
 
+    const synced = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    console.log(`[sync-all] Complete - synced: ${synced}, failed: ${failed}`);
+
     return new Response(
-      JSON.stringify({ success: true, results }),
+      JSON.stringify({ success: true, synced, failed, results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e: any) {
+    console.error(`[sync-all] Error: ${e.message}`);
     return new Response(
       JSON.stringify({ success: false, error: e.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
     );
   }
 });

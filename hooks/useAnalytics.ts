@@ -303,41 +303,58 @@ export function useAnalytics() {
 
   const stats = useMemo(() => {
     if (!state.analytics.length) return { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, totalDownloads: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, totalRevenue: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
+
     const today = state.analytics[state.analytics.length - 1];
     const lastWeek = state.analytics.slice(-7);
     const lastMonth = state.analytics;
-    const downloadsWeek = lastWeek.reduce((sum, s) => sum + s.downloads, 0);
-    const downloadsMonth = lastMonth.reduce((sum, s) => sum + s.downloads, 0);
-    const totalDownloads = state.analytics.reduce((sum, s) => sum + s.downloads, 0);
-    const revenueWeek = lastWeek.reduce((sum, s) => sum + s.revenue, 0);
-    const revenueMonth = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
-    const totalRevenue = state.analytics.reduce((sum, s) => sum + s.revenue, 0);
+
+    // Calculate from analytics data
+    const downloadsWeekCalc = lastWeek.reduce((sum, s) => sum + s.downloads, 0);
+    const downloadsMonthCalc = lastMonth.reduce((sum, s) => sum + s.downloads, 0);
+    const revenueWeekCalc = lastWeek.reduce((sum, s) => sum + s.revenue, 0);
+    const revenueMonthCalc = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
+
+    // For 28-day totals, use exact value (28 days of data)
+    // Downloads: sum all days, but use floor to avoid showing more than actual
+    const totalDownloads28d = Math.floor(lastMonth.reduce((sum, s) => sum + s.downloads, 0));
+    const totalRevenue28d = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
+
+    // Daily values from today's snapshot
+    const downloadsToday = Math.round(today?.downloads || 0);
+    const revenueToday = today?.revenue || 0;
+
+    // Weekly = 7 days worth
+    const downloadsWeek = Math.round(downloadsWeekCalc);
+    const revenueWeek = revenueWeekCalc;
+
     const previousWeek = state.analytics.slice(-14, -7);
     const previousWeekDownloads = previousWeek.reduce((sum, s) => sum + s.downloads, 0);
     const previousWeekRevenue = previousWeek.reduce((sum, s) => sum + s.revenue, 0);
+
     const stats = {
-      downloadsToday: today?.downloads || 0,
+      downloadsToday,
       downloadsWeek,
-      downloadsMonth,
-      totalDownloads,
-      revenueToday: today?.revenue || 0,
+      downloadsMonth: totalDownloads28d,
+      totalDownloads: totalDownloads28d,
+      revenueToday,
       revenueWeek,
-      revenueMonth,
-      totalRevenue,
+      revenueMonth: totalRevenue28d,
+      totalRevenue: totalRevenue28d,
       activeUsers: today?.active_users || 0,
       averageRating: today?.average_rating || 0,
       ratingsCount: lastMonth.reduce((sum, s) => sum + s.ratings_count, 0),
       downloadsChange: previousWeekDownloads ? ((downloadsWeek - previousWeekDownloads) / previousWeekDownloads) * 100 : 0,
       revenueChange: previousWeekRevenue ? ((revenueWeek - previousWeekRevenue) / previousWeekRevenue) * 100 : 0
     };
+
     console.log('[useAnalytics] Stats computed:', {
       downloadsToday: stats.downloadsToday,
       downloadsWeek: stats.downloadsWeek,
-      downloadsMonth: stats.downloadsMonth,
       totalDownloads: stats.totalDownloads,
       revenueToday: stats.revenueToday,
       totalRevenue: stats.totalRevenue
     });
+
     return stats;
   }, [state.analytics]);
 

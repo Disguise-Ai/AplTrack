@@ -6,107 +6,75 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Simple encryption using AES-GCM (in production, use a proper key management service)
-const ENCRYPTION_KEY = Deno.env.get("CREDENTIALS_ENCRYPTION_KEY") || "statly-secure-key-change-in-prod";
-
-async function encrypt(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-
-  // Create a key from the password
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(ENCRYPTION_KEY),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: salt,
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    true,
-    ["encrypt", "decrypt"]
-  );
-
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: iv },
-    key,
-    data
-  );
-
-  // Combine salt + iv + encrypted data
-  const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
-  combined.set(salt, 0);
-  combined.set(iv, salt.length);
-  combined.set(new Uint8Array(encrypted), salt.length + iv.length);
-
-  return btoa(String.fromCharCode(...combined));
-}
-
-async function validateCredentials(provider: string, credentials: Record<string, string>): Promise<{ valid: boolean; error?: string }> {
+// Validate credentials with provider API
+async function validateCredentials(provider: string, credentials: Record<string, string>): Promise<{ valid: boolean; error?: string; projectId?: string }> {
   try {
     switch (provider) {
       case "revenuecat": {
-        const apiKey = credentials.api_key;
+        const apiKey = credentials.api_key?.trim();
+        if (!apiKey) {
+          return { valid: false, error: "API key is required" };
+        }
+
+        console.log(`[validate] Testing RevenueCat API key: ${apiKey.substring(0, 10)}...`);
+
+        // Try to fetch projects to validate the key
         const response = await fetch("https://api.revenuecat.com/v2/projects", {
           headers: {
             "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
         });
-        if (response.ok || response.status === 200) {
+
+        console.log(`[validate] RevenueCat response: ${response.status}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          const projects = data.items || [];
+          console.log(`[validate] Found ${projects.length} projects`);
+
+          if (projects.length > 0) {
+            return { valid: true, projectId: projects[0].id };
+          }
           return { valid: true };
         }
-        // Try V1 API as fallback
-        const v1Response = await fetch(
-          `https://api.revenuecat.com/v1/subscribers/$RCAnonymousID:test`,
-          {
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              "X-Platform": "ios",
-            },
-          }
-        );
-        return { valid: v1Response.ok || v1Response.status === 404 }; // 404 is OK, means key works but user doesn't exist
+
+        if (response.status === 401) {
+          return { valid: false, error: "Invalid API key - please check and try again" };
+        }
+
+        const errText = await response.text();
+        return { valid: false, error: `API error: ${response.status} - ${errText.substring(0, 100)}` };
       }
 
       case "stripe": {
+        const secretKey = credentials.secret_key?.trim();
+        if (!secretKey) {
+          return { valid: false, error: "Secret key is required" };
+        }
+
         const response = await fetch("https://api.stripe.com/v1/balance", {
-          headers: {
-            "Authorization": `Bearer ${credentials.secret_key}`,
-          },
+          headers: { "Authorization": `Bearer ${secretKey}` },
         });
-        return { valid: response.ok };
-      }
 
-      case "mixpanel": {
-        // Mixpanel doesn't have a simple validation endpoint, accept if format is correct
-        return { valid: !!credentials.api_secret && credentials.api_secret.length > 10 };
-      }
-
-      case "amplitude": {
-        return { valid: !!credentials.api_key && !!credentials.secret_key };
+        if (response.ok) {
+          return { valid: true };
+        }
+        return { valid: false, error: "Invalid Stripe secret key" };
       }
 
       default:
         // For other providers, just check that required fields exist
-        return { valid: Object.values(credentials).every(v => v && v.length > 0) };
+        const hasValues = Object.values(credentials).every(v => v && v.trim().length > 0);
+        return { valid: hasValues, error: hasValues ? undefined : "All fields are required" };
     }
   } catch (error: any) {
-    return { valid: false, error: error.message };
+    console.error(`[validate] Error: ${error.message}`);
+    return { valid: false, error: `Validation failed: ${error.message}` };
   }
 }
 
+// Mask credential for display (show first 4 and last 4 chars)
 function maskCredential(value: string): string {
   if (!value || value.length < 8) return "••••••••";
   return value.substring(0, 4) + "••••••••" + value.substring(value.length - 4);
@@ -120,6 +88,8 @@ serve(async (req) => {
   try {
     const { action, user_id, provider, credentials, app_id } = await req.json();
 
+    console.log(`[store-credentials] Action: ${action}, Provider: ${provider}, User: ${user_id}`);
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
@@ -127,45 +97,65 @@ serve(async (req) => {
 
     if (action === "store") {
       // Validate credentials first
+      console.log(`[store-credentials] Validating credentials...`);
       const validation = await validateCredentials(provider, credentials);
+
       if (!validation.valid) {
+        console.log(`[store-credentials] Validation failed: ${validation.error}`);
         return new Response(
-          JSON.stringify({
-            success: false,
-            error: validation.error || "Invalid credentials. Please check and try again."
-          }),
+          JSON.stringify({ success: false, error: validation.error }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Encrypt sensitive credentials
-      const encryptedCredentials: Record<string, string> = {};
-      const maskedCredentials: Record<string, string> = {};
+      console.log(`[store-credentials] Validation passed, storing credentials...`);
 
+      // Create masked version for display
+      const maskedCredentials: Record<string, string> = {};
       for (const [key, value] of Object.entries(credentials)) {
         if (key.includes("key") || key.includes("secret") || key.includes("token") || key.includes("private")) {
-          encryptedCredentials[key] = await encrypt(value as string);
           maskedCredentials[key] = maskCredential(value as string);
         } else {
-          encryptedCredentials[key] = value as string;
           maskedCredentials[key] = value as string;
         }
       }
 
-      // Store encrypted credentials
+      // Store credentials (plain, not encrypted for now)
       const { data, error } = await supabase.from("connected_apps").insert({
         user_id,
         provider,
-        credentials: encryptedCredentials,
+        credentials: credentials, // Store plain credentials
         credentials_masked: maskedCredentials,
-        app_store_app_id: credentials.app_id || credentials.project_id || credentials.app_token || "",
+        app_store_app_id: credentials.app_id || credentials.project_id || validation.projectId || "",
         is_active: true,
-        is_encrypted: true,
-      }).select("id, provider, credentials_masked, created_at, last_sync_at").single();
+        is_encrypted: false,
+      }).select("id, provider, credentials_masked, is_active, last_sync_at, created_at").single();
 
       if (error) {
-        console.error("Store error:", error);
+        console.error(`[store-credentials] Database error: ${error.message}`);
         throw new Error(error.message);
+      }
+
+      console.log(`[store-credentials] Stored app: ${data.id}`);
+
+      // IMMEDIATELY sync data after storing credentials
+      console.log(`[store-credentials] Triggering immediate sync...`);
+      try {
+        const syncResponse = await fetch(
+          `${Deno.env.get("SUPABASE_URL")}/functions/v1/sync-all`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({ user_id }),
+          }
+        );
+        const syncResult = await syncResponse.json();
+        console.log(`[store-credentials] Sync result:`, syncResult);
+      } catch (syncErr: any) {
+        console.error(`[store-credentials] Sync error:`, syncErr.message);
       }
 
       return new Response(
@@ -179,36 +169,29 @@ serve(async (req) => {
       const validation = await validateCredentials(provider, credentials);
       if (!validation.valid) {
         return new Response(
-          JSON.stringify({
-            success: false,
-            error: validation.error || "Invalid credentials. Please check and try again."
-          }),
+          JSON.stringify({ success: false, error: validation.error }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Encrypt sensitive credentials
-      const encryptedCredentials: Record<string, string> = {};
+      // Create masked version
       const maskedCredentials: Record<string, string> = {};
-
       for (const [key, value] of Object.entries(credentials)) {
         if (key.includes("key") || key.includes("secret") || key.includes("token") || key.includes("private")) {
-          encryptedCredentials[key] = await encrypt(value as string);
           maskedCredentials[key] = maskCredential(value as string);
         } else {
-          encryptedCredentials[key] = value as string;
           maskedCredentials[key] = value as string;
         }
       }
 
       const { data, error } = await supabase.from("connected_apps")
         .update({
-          credentials: encryptedCredentials,
+          credentials: credentials,
           credentials_masked: maskedCredentials,
-          is_encrypted: true,
+          is_encrypted: false,
         })
         .eq("id", app_id)
-        .select("id, provider, credentials_masked, created_at, last_sync_at")
+        .select("id, provider, credentials_masked, is_active, last_sync_at, created_at")
         .single();
 
       if (error) {
@@ -227,7 +210,7 @@ serve(async (req) => {
     );
 
   } catch (error: any) {
-    console.error("Error:", error);
+    console.error(`[store-credentials] Error: ${error.message}`);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
