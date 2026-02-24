@@ -20,17 +20,30 @@ export async function updateProfile(userId: string, updates: Partial<Profile>): 
 }
 
 export async function getConnectedApps(userId: string): Promise<ConnectedApp[]> {
-  // Only select non-sensitive fields - never return full credentials to client
+  // Select all fields - filter sensitive ones in the mapping
   const { data, error } = await supabase
     .from('connected_apps')
-    .select('id, user_id, provider, app_store_app_id, credentials_masked, is_active, is_encrypted, last_sync_at, created_at')
+    .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
-  if (error) throw error;
-  // Map credentials_masked to credentials for UI compatibility
+
+  if (error) {
+    console.error('Error loading connected apps:', error);
+    throw error;
+  }
+
+  // Map to safe format - never expose raw credentials
   return (data || []).map(app => ({
-    ...app,
-    credentials: app.credentials_masked || {},
+    id: app.id,
+    user_id: app.user_id,
+    provider: app.provider,
+    app_store_app_id: app.app_store_app_id,
+    is_active: app.is_active,
+    is_encrypted: app.is_encrypted,
+    last_sync_at: app.last_sync_at,
+    created_at: app.created_at,
+    credentials: app.credentials_masked || {}, // Use masked credentials for display
+    credentials_masked: app.credentials_masked,
   }));
 }
 
