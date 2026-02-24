@@ -96,20 +96,20 @@ export function useAnalytics() {
             // Sum up metrics from all sources
             switch (m.metric_type) {
               case 'downloads_daily':
-                // Daily downloads (new users today) - take max across apps
-                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
-                break;
-              case 'downloads_cumulative':
               case 'downloads':
               case 'new_customers':
               case 'installs':
-                // Ignore old cumulative metrics for daily view
+                // Daily downloads - take max across apps for same day
+                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
                 break;
               case 'revenue':
                 snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
                 break;
               case 'mrr':
-                // MRR is monthly, don't add it to daily revenue
+                // MRR is monthly - also add to revenue if no daily revenue
+                if (snapshot.revenue === 0) {
+                  snapshot.revenue = m.metric_value / 30; // Approximate daily from MRR
+                }
                 break;
               case 'active_subscribers':
               case 'active_users':
@@ -189,20 +189,20 @@ export function useAnalytics() {
             const snapshot = metricsByDate.get(m.metric_date)!;
             switch (m.metric_type) {
               case 'downloads_daily':
-                // Daily downloads (new users today)
-                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
-                break;
-              case 'downloads_cumulative':
               case 'downloads':
               case 'new_customers':
               case 'installs':
-                // Ignore old cumulative metrics
+                // Daily downloads - take max across apps for same day
+                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
                 break;
               case 'revenue':
                 snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
                 break;
               case 'mrr':
-                // MRR is monthly
+                // MRR is monthly - also add to revenue if no daily revenue
+                if (snapshot.revenue === 0) {
+                  snapshot.revenue = m.metric_value / 30;
+                }
                 break;
               case 'active_subscribers':
               case 'active_users':
@@ -258,17 +258,20 @@ export function useAnalytics() {
           const snapshot = metricsByDate.get(m.metric_date)!;
           switch (m.metric_type) {
             case 'downloads_daily':
-              // Daily downloads (new users today)
-              snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
-              break;
-            case 'downloads_cumulative':
             case 'downloads':
             case 'new_customers':
             case 'installs':
-              // Ignore old cumulative metrics
+              // Daily downloads - take max across apps for same day
+              snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
               break;
             case 'revenue':
               snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
+              break;
+            case 'mrr':
+              // MRR is monthly - also add to revenue if no daily revenue
+              if (snapshot.revenue === 0) {
+                snapshot.revenue = m.metric_value / 30;
+              }
               break;
             case 'active_subscribers':
             case 'active_users':
