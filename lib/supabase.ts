@@ -59,12 +59,14 @@ export interface Profile {
 export interface ConnectedApp {
   id: string;
   user_id: string;
-  provider: 'appstore' | 'revenuecat' | 'appsflyer' | 'adjust' | 'mixpanel' | 'amplitude';
+  provider: 'appstore' | 'revenuecat' | 'appsflyer' | 'adjust' | 'mixpanel' | 'amplitude' | 'stripe' | 'polar' | 'superwall' | 'adapty' | 'qonversion' | 'paddle';
   app_store_app_id?: string;
   app_name?: string;
   bundle_id?: string;
-  credentials?: Record<string, string>;
+  credentials?: Record<string, string>; // Encrypted credentials (never returned to client)
+  credentials_masked?: Record<string, string>; // Masked versions for display
   is_active: boolean;
+  is_encrypted?: boolean; // True if credentials are encrypted
   last_sync_at?: string;
   created_at: string;
   // Legacy fields for backwards compatibility

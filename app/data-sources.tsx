@@ -33,7 +33,7 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Revenue, MRR, Subscribers',
     speed: 'Real-time',
     fields: [
-      { key: 'api_key', label: 'Secret API Key', placeholder: 'sk_xxxxxxxxxxxx' },
+      { key: 'api_key', label: 'Secret API Key', placeholder: 'sk_xxxxxxxxxxxx', secure: true },
       { key: 'project_id', label: 'Project ID', placeholder: 'projxxxxxxxxx' },
     ],
   },
@@ -71,7 +71,7 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Conversions, Paywalls, A/B Tests',
     speed: 'Real-time',
     fields: [
-      { key: 'api_key', label: 'API Key', placeholder: 'pk_xxxxxxxxxxxx' },
+      { key: 'api_key', label: 'API Key', placeholder: 'pk_xxxxxxxxxxxx', secure: true },
       { key: 'app_id', label: 'App ID', placeholder: 'Your Superwall app ID' },
     ],
   },
@@ -123,7 +123,7 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Installs, Attribution, Ad Spend',
     speed: 'Real-time',
     fields: [
-      { key: 'api_token', label: 'API Token', placeholder: 'Your AppsFlyer API token' },
+      { key: 'api_token', label: 'API Token', placeholder: 'Your AppsFlyer API token', secure: true },
       { key: 'app_id', label: 'App ID', placeholder: 'id123456789' },
     ],
   },
@@ -136,8 +136,8 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Installs, Events, Cohorts',
     speed: 'Real-time',
     fields: [
-      { key: 'api_token', label: 'API Token', placeholder: 'Your Adjust API token' },
-      { key: 'app_token', label: 'App Token', placeholder: 'abc123xyz' },
+      { key: 'api_token', label: 'API Token', placeholder: 'Your Adjust API token', secure: true },
+      { key: 'app_token', label: 'App Token', placeholder: 'abc123xyz', secure: true },
     ],
   },
   {
@@ -162,7 +162,7 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Users, Events, Retention',
     speed: 'Real-time',
     fields: [
-      { key: 'api_key', label: 'API Key', placeholder: 'Your Amplitude API key' },
+      { key: 'api_key', label: 'API Key', placeholder: 'Your Amplitude API key', secure: true },
       { key: 'secret_key', label: 'Secret Key', placeholder: 'Your Amplitude secret key', secure: true },
     ],
   },
@@ -175,10 +175,10 @@ const DATA_SOURCES: DataSource[] = [
     dataType: 'Downloads, Sales, Ratings',
     speed: '24-48 hours delay',
     fields: [
-      { key: 'key_id', label: 'Key ID', placeholder: 'ABC123DEFG' },
+      { key: 'key_id', label: 'Key ID', placeholder: 'ABC123DEFG', secure: true },
       { key: 'issuer_id', label: 'Issuer ID', placeholder: '12345678-1234-1234-1234-123456789012' },
       { key: 'app_id', label: 'App ID', placeholder: '1234567890' },
-      { key: 'private_key', label: 'Private Key (.p8)', placeholder: 'Paste your .p8 key content', multiline: true },
+      { key: 'private_key', label: 'Private Key (.p8)', placeholder: 'Paste your .p8 key content', multiline: true, secure: true },
     ],
   },
 ];
@@ -283,10 +283,10 @@ export default function DataSourcesScreen() {
 
     setLoading(true);
     try {
-      await updateAppCredentials(editingApp.id, trimmedCredentials);
+      await updateAppCredentials(editingApp.id, trimmedCredentials, selectedSource.id);
       await loadConnectedApps();
       closeModal();
-      Alert.alert('Updated!', `${selectedSource.name} credentials updated successfully`);
+      Alert.alert('Updated!', `${selectedSource.name} credentials updated and encrypted securely.`);
     } catch (error: any) {
       Alert.alert('Update Failed', error.message || 'Failed to update credentials');
     } finally {
@@ -380,11 +380,12 @@ export default function DataSourcesScreen() {
                           </Text>
                         )}
                       </View>
-                      {app.credentials?.project_id && (
-                        <Text variant="caption" color="tertiary" style={{ marginTop: 2 }}>
-                          Project: {app.credentials.project_id.substring(0, 12)}...
+                      <View style={styles.secureRow}>
+                        <Ionicons name="shield-checkmark" size={12} color={colors.success} />
+                        <Text variant="caption" color="tertiary" style={{ marginLeft: 4 }}>
+                          Encrypted & Secure
                         </Text>
-                      )}
+                      </View>
                     </View>
                     <View style={styles.actionButtons}>
                       <TouchableOpacity
@@ -457,11 +458,18 @@ export default function DataSourcesScreen() {
                     <Text variant="body" color="secondary" align="center">{selectedSource.description}</Text>
                   </View>
 
+                  <View style={[styles.infoBox, { backgroundColor: colors.success + '15' }]}>
+                    <Ionicons name="shield-checkmark" size={20} color={colors.success} />
+                    <Text variant="caption" color="secondary" style={{ flex: 1, marginLeft: 8 }}>
+                      Your API keys are encrypted and stored securely. Keys are validated before saving and never visible after entry.
+                    </Text>
+                  </View>
+
                   {modalMode === 'edit' && (
                     <View style={[styles.infoBox, { backgroundColor: colors.warning + '15' }]}>
                       <Ionicons name="information-circle" size={20} color={colors.warning} />
                       <Text variant="caption" color="secondary" style={{ flex: 1, marginLeft: 8 }}>
-                        Enter your new API credentials. For security, existing credentials are not displayed.
+                        Enter your new API credentials. For security, existing credentials cannot be viewed.
                       </Text>
                     </View>
                   )}
@@ -526,6 +534,7 @@ const styles = StyleSheet.create({
   sourceInfo: { flex: 1 },
   sourceSpeed: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   connectedStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  secureRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   actionButtons: { flexDirection: 'row', gap: 8 },
   actionButton: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

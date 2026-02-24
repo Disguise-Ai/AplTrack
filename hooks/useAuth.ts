@@ -28,7 +28,19 @@ export function useAuth() {
     const initAuth = async () => {
       try {
         // Add timeout for Mac Catalyst which can sometimes hang
-        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 5000);
+        const { data: { session }, error } = await withTimeout(supabase.auth.getSession(), 5000);
+
+        // Handle invalid refresh token error - clear session and start fresh
+        if (error) {
+          console.log('Auth session error:', error.message);
+          if (error.message?.includes('Refresh Token') || error.message?.includes('Invalid')) {
+            console.log('Clearing invalid session...');
+            await supabase.auth.signOut();
+            setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+            return;
+          }
+        }
+
         let profile: Profile | null = null;
         if (session?.user) {
           try {
@@ -42,8 +54,13 @@ export function useAuth() {
           }
         }
         setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true });
-      } catch (error) {
+      } catch (error: any) {
         console.log('Auth init error (possibly timeout):', error);
+        // Handle refresh token errors
+        if (error?.message?.includes('Refresh Token') || error?.message?.includes('Invalid')) {
+          console.log('Clearing invalid session due to refresh token error...');
+          try { await supabase.auth.signOut(); } catch (e) { /* ignore */ }
+        }
         // On error/timeout, still mark as initialized so user can proceed
         setState({ session: null, user: null, profile: null, loading: false, initialized: true });
       }
@@ -52,6 +69,13 @@ export function useAuth() {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Handle token refresh errors
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        console.log('Token refresh failed, clearing session');
+        setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+        return;
+      }
+
       let profile: Profile | null = null;
       if (session?.user) {
         try { profile = await getProfile(session.user.id); } catch (error) { console.log('Profile not found'); }

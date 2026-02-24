@@ -20,9 +20,18 @@ export async function updateProfile(userId: string, updates: Partial<Profile>): 
 }
 
 export async function getConnectedApps(userId: string): Promise<ConnectedApp[]> {
-  const { data, error } = await supabase.from('connected_apps').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+  // Only select non-sensitive fields - never return full credentials to client
+  const { data, error } = await supabase
+    .from('connected_apps')
+    .select('id, user_id, provider, app_store_app_id, credentials_masked, is_active, is_encrypted, last_sync_at, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
   if (error) throw error;
-  return data || [];
+  // Map credentials_masked to credentials for UI compatibility
+  return (data || []).map(app => ({
+    ...app,
+    credentials: app.credentials_masked || {},
+  }));
 }
 
 export async function connectApp(app: {
@@ -35,35 +44,34 @@ export async function connectApp(app: {
   app_store_connect_private_key?: string;
 }): Promise<ConnectedApp> {
   try {
-    const insertData: any = {
-      user_id: app.user_id,
-      provider: app.provider || 'appstore',
-      app_store_app_id: app.app_store_app_id,
-      is_active: true,
-    };
+    console.log('Connecting app securely:', app.provider);
 
-    // Store credentials securely (in production, encrypt these)
-    if (app.credentials) {
-      insertData.credentials = app.credentials;
+    // Use secure edge function to validate and store encrypted credentials
+    const response = await fetch(
+      `https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/store-credentials`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydGt0aWJjeHdzb3F2amxldGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzMyMjgsImV4cCI6MjA4NzEwOTIyOH0.2TXD5lBOeyhYcQWsVwhddi-NeWNShJT3m0to-fadrFw`,
+        },
+        body: JSON.stringify({
+          action: 'store',
+          user_id: app.user_id,
+          provider: app.provider || 'appstore',
+          credentials: app.credentials || {},
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to connect app');
     }
 
-    // Legacy support for App Store Connect
-    if (app.app_store_connect_key_id) {
-      insertData.app_store_connect_key_id = app.app_store_connect_key_id;
-      insertData.app_store_connect_issuer_id = app.app_store_connect_issuer_id;
-      insertData.app_store_connect_private_key = app.app_store_connect_private_key;
-    }
-
-    console.log('Connecting app:', app.provider);
-    const { data, error } = await supabase.from('connected_apps').insert(insertData).select().single();
-
-    if (error) {
-      console.error('connectApp error:', error);
-      throw new Error(error.message || 'Failed to connect app');
-    }
-
-    console.log('App connected successfully:', data?.id);
-    return data;
+    console.log('App connected securely:', result.app?.id);
+    return result.app;
   } catch (err: any) {
     console.error('connectApp exception:', err);
     throw err;
@@ -85,18 +93,37 @@ export async function disconnectApp(appId: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function updateAppCredentials(appId: string, credentials: Record<string, string>): Promise<ConnectedApp> {
-  const { data, error } = await supabase
-    .from('connected_apps')
-    .update({
-      credentials,
-      app_store_app_id: credentials.app_id || credentials.app_token || undefined,
-    })
-    .eq('id', appId)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+export async function updateAppCredentials(appId: string, credentials: Record<string, string>, provider?: string): Promise<ConnectedApp> {
+  try {
+    // Use secure edge function to validate and store encrypted credentials
+    const response = await fetch(
+      `https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/store-credentials`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydGt0aWJjeHdzb3F2amxldGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzMyMjgsImV4cCI6MjA4NzEwOTIyOH0.2TXD5lBOeyhYcQWsVwhddi-NeWNShJT3m0to-fadrFw`,
+        },
+        body: JSON.stringify({
+          action: 'update',
+          app_id: appId,
+          provider: provider || 'unknown',
+          credentials,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to update credentials');
+    }
+
+    return result.app;
+  } catch (err: any) {
+    console.error('updateAppCredentials exception:', err);
+    throw err;
+  }
 }
 
 export async function getAnalytics(appId: string, startDate: string, endDate: string): Promise<AnalyticsSnapshot[]> {

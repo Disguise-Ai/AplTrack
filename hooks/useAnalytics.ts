@@ -299,14 +299,16 @@ export function useAnalytics() {
   }, [user]);
 
   const stats = useMemo(() => {
-    if (!state.analytics.length) return { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
+    if (!state.analytics.length) return { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, totalDownloads: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, totalRevenue: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
     const today = state.analytics[state.analytics.length - 1];
     const lastWeek = state.analytics.slice(-7);
     const lastMonth = state.analytics;
     const downloadsWeek = lastWeek.reduce((sum, s) => sum + s.downloads, 0);
     const downloadsMonth = lastMonth.reduce((sum, s) => sum + s.downloads, 0);
+    const totalDownloads = state.analytics.reduce((sum, s) => sum + s.downloads, 0);
     const revenueWeek = lastWeek.reduce((sum, s) => sum + s.revenue, 0);
     const revenueMonth = lastMonth.reduce((sum, s) => sum + s.revenue, 0);
+    const totalRevenue = state.analytics.reduce((sum, s) => sum + s.revenue, 0);
     const previousWeek = state.analytics.slice(-14, -7);
     const previousWeekDownloads = previousWeek.reduce((sum, s) => sum + s.downloads, 0);
     const previousWeekRevenue = previousWeek.reduce((sum, s) => sum + s.revenue, 0);
@@ -314,9 +316,11 @@ export function useAnalytics() {
       downloadsToday: today?.downloads || 0,
       downloadsWeek,
       downloadsMonth,
+      totalDownloads,
       revenueToday: today?.revenue || 0,
       revenueWeek,
       revenueMonth,
+      totalRevenue,
       activeUsers: today?.active_users || 0,
       averageRating: today?.average_rating || 0,
       ratingsCount: lastMonth.reduce((sum, s) => sum + s.ratings_count, 0),
@@ -327,7 +331,9 @@ export function useAnalytics() {
       downloadsToday: stats.downloadsToday,
       downloadsWeek: stats.downloadsWeek,
       downloadsMonth: stats.downloadsMonth,
-      revenueToday: stats.revenueToday
+      totalDownloads: stats.totalDownloads,
+      revenueToday: stats.revenueToday,
+      totalRevenue: stats.totalRevenue
     });
     return stats;
   }, [state.analytics]);
@@ -340,21 +346,21 @@ export function useAnalytics() {
     if (
       prevStats &&
       prevStats.downloadsToday === stats.downloadsToday &&
-      prevStats.downloadsWeek === stats.downloadsWeek &&
+      prevStats.totalDownloads === stats.totalDownloads &&
       prevStats.revenueToday === stats.revenueToday &&
-      prevStats.activeUsers === stats.activeUsers
+      prevStats.totalRevenue === stats.totalRevenue
     ) {
       return;
     }
     prevStatsRef.current = stats;
 
     // Update widget data for iOS widgets
-    if (stats.downloadsToday > 0 || stats.downloadsWeek > 0 || stats.revenueToday > 0) {
+    if (stats.downloadsToday > 0 || stats.totalDownloads > 0 || stats.revenueToday > 0 || stats.totalRevenue > 0) {
       updateWidgetData({
         downloadsToday: stats.downloadsToday,
-        downloadsWeek: stats.downloadsWeek,
-        revenue: stats.revenueToday,
-        activeUsers: stats.activeUsers,
+        totalDownloads: stats.totalDownloads,
+        revenueToday: stats.revenueToday,
+        totalRevenue: stats.totalRevenue,
       });
     }
   }, [stats]);

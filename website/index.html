@@ -17,18 +17,7 @@
     <nav class="nav">
         <div class="nav-container">
             <a href="#" class="nav-logo">
-                <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="32" height="32" rx="8" fill="url(#logo-gradient)"/>
-                    <path d="M10 22L16 10L22 22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M12.5 18H19.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-                    <circle cx="16" cy="22" r="1.5" fill="white"/>
-                    <defs>
-                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                            <stop stop-color="#A78BFA"/>
-                            <stop offset="1" stop-color="#818CF8"/>
-                        </linearGradient>
-                    </defs>
-                </svg>
+                <img src="assets/logo.png" alt="Statly" class="logo-icon" width="32" height="32">
                 <span>Statly</span>
             </a>
             <div class="nav-links">
@@ -65,7 +54,10 @@
             <div class="phone-mockup">
                 <div class="phone-screen">
                     <div class="app-header">
-                        <span class="app-title">Dashboard</span>
+                        <div class="app-title-row">
+                            <img src="assets/logo.png" alt="Statly" class="app-logo">
+                            <span class="app-title">Dashboard</span>
+                        </div>
                         <span class="app-date">Today</span>
                     </div>
                     <div class="stat-cards">
@@ -319,18 +311,7 @@
         <div class="footer-content">
             <div class="footer-brand">
                 <a href="#" class="nav-logo">
-                    <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="32" height="32" rx="8" fill="url(#footer-logo-gradient)"/>
-                        <path d="M10 22L16 10L22 22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M12.5 18H19.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-                        <circle cx="16" cy="22" r="1.5" fill="white"/>
-                        <defs>
-                            <linearGradient id="footer-logo-gradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                                <stop stop-color="#A78BFA"/>
-                                <stop offset="1" stop-color="#818CF8"/>
-                            </linearGradient>
-                        </defs>
-                    </svg>
+                    <img src="assets/logo.png" alt="Statly" class="logo-icon" width="32" height="32">
                     <span>Statly</span>
                 </a>
                 <p class="footer-tagline">Real-time analytics for indie developers.</p>
@@ -377,5 +358,127 @@
             </div>
         </div>
     </footer>
+
+    <script>
+        // Scroll-based animations
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-in');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // Observe elements for scroll animations
+        document.querySelectorAll('.feature-card, .section-title, .section-subtitle, .pricing-card, .mac-mockup, .logo-item, .download-btn').forEach(el => {
+            el.classList.add('animate-on-scroll');
+            observer.observe(el);
+        });
+
+        // Stagger animation for feature cards
+        document.querySelectorAll('.feature-card').forEach((card, index) => {
+            card.style.animationDelay = `${index * 0.1}s`;
+        });
+
+        // Stagger animation for logo items
+        document.querySelectorAll('.logo-item').forEach((item, index) => {
+            item.style.animationDelay = `${index * 0.05}s`;
+        });
+
+        // Parallax effect on mouse move for hero section
+        const hero = document.querySelector('.hero');
+        const phoneMockup = document.querySelector('.phone-mockup');
+
+        if (hero && phoneMockup) {
+            hero.addEventListener('mousemove', (e) => {
+                const rect = hero.getBoundingClientRect();
+                const x = (e.clientX - rect.left - rect.width / 2) / rect.width;
+                const y = (e.clientY - rect.top - rect.height / 2) / rect.height;
+
+                phoneMockup.style.transform = `
+                    perspective(1000px)
+                    rotateY(${x * 5}deg)
+                    rotateX(${-y * 5}deg)
+                    scale(1)
+                `;
+            });
+
+            hero.addEventListener('mouseleave', () => {
+                phoneMockup.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) scale(1)';
+            });
+        }
+
+        // Smooth counter animation for stat values
+        const animateValue = (element, start, end, duration) => {
+            const range = end - start;
+            const startTime = performance.now();
+
+            const update = (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+                const current = Math.floor(start + range * easeProgress);
+
+                if (element.textContent.includes('$')) {
+                    element.textContent = '$' + current.toLocaleString();
+                } else if (element.textContent.includes('.')) {
+                    element.textContent = (current / 10).toFixed(1);
+                } else {
+                    element.textContent = current.toLocaleString();
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            };
+
+            requestAnimationFrame(update);
+        };
+
+        // Animate stat values when they come into view
+        const statObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const value = entry.target.textContent;
+                    let numValue;
+
+                    if (value.includes('$')) {
+                        numValue = parseInt(value.replace(/[$,]/g, ''));
+                    } else if (value.includes('.')) {
+                        numValue = parseFloat(value) * 10;
+                    } else {
+                        numValue = parseInt(value.replace(/,/g, ''));
+                    }
+
+                    if (!isNaN(numValue)) {
+                        animateValue(entry.target, 0, numValue, 1500);
+                    }
+                    statObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        document.querySelectorAll('.stat-value, .mac-stat-value').forEach(el => {
+            statObserver.observe(el);
+        });
+
+        // Add glow effect on scroll
+        let lastScrollY = window.scrollY;
+        window.addEventListener('scroll', () => {
+            const nav = document.querySelector('.nav');
+            if (window.scrollY > 50) {
+                nav.style.boxShadow = '0 0 30px rgba(167, 139, 250, 0.1)';
+            } else {
+                nav.style.boxShadow = 'none';
+            }
+            lastScrollY = window.scrollY;
+        });
+    </script>
 </body>
 </html>

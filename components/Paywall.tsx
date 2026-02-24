@@ -123,14 +123,16 @@ interface LockedFeatureProps {
 }
 
 export function LockedFeature({ feature, featureTitle, children }: LockedFeatureProps) {
-  const { checkFeatureAccess, isPremium } = useSubscription();
+  const { checkFeatureAccess, isPremium, loading } = useSubscription();
   const [showPaywall, setShowPaywall] = React.useState(false);
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
   const hasAccess = checkFeatureAccess(feature);
 
-  if (hasAccess) {
+  // Show content while loading to prevent flash for premium users
+  // Once loaded, hasAccess will be accurate
+  if (loading || hasAccess) {
     return <>{children}</>;
   }
 

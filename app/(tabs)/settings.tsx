@@ -176,6 +176,48 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text variant="caption" color="secondary" style={styles.sectionTitle}>WIDGETS</Text>
+          <Card style={styles.widgetCard}>
+            <View style={styles.widgetContent}>
+              <View style={[styles.widgetIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                <Ionicons name="apps" size={28} color={colors.primary} />
+              </View>
+              <View style={styles.widgetInfo}>
+                <Text variant="label" weight="semibold">Home Screen Widget</Text>
+                <Text variant="caption" color="secondary" style={{ marginTop: 4 }}>
+                  View your downloads and revenue at a glance
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.widgetDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.widgetInstructions}>
+              <Text variant="caption" color="secondary" weight="semibold" style={{ marginBottom: 8 }}>
+                HOW TO ADD WIDGET
+              </Text>
+              <View style={styles.instructionStep}>
+                <Text variant="caption" style={[styles.stepNumber, { backgroundColor: colors.primary }]}>1</Text>
+                <Text variant="caption" color="secondary">Long-press on your home screen</Text>
+              </View>
+              <View style={styles.instructionStep}>
+                <Text variant="caption" style={[styles.stepNumber, { backgroundColor: colors.primary }]}>2</Text>
+                <Text variant="caption" color="secondary">Tap the + button in the top corner</Text>
+              </View>
+              <View style={styles.instructionStep}>
+                <Text variant="caption" style={[styles.stepNumber, { backgroundColor: colors.primary }]}>3</Text>
+                <Text variant="caption" color="secondary">Search for "Statly" and select a widget size</Text>
+              </View>
+              <View style={styles.instructionStep}>
+                <Text variant="caption" style={[styles.stepNumber, { backgroundColor: colors.primary }]}>4</Text>
+                <Text variant="caption" color="secondary">Tap "Add Widget" to place it on your screen</Text>
+              </View>
+            </View>
+            <Text variant="caption" color="secondary" style={styles.widgetNote}>
+              Widgets show: Today's Downloads, Total Downloads, Today's Revenue, All-Time Revenue
+            </Text>
+          </Card>
+        </View>
+
+        <View style={styles.section}>
           <Text variant="caption" color="secondary" style={styles.sectionTitle}>SUPPORT</Text>
           <Card style={styles.sectionCard} padding={0}>
             <SettingsItem icon="help-circle-outline" label="Help Center" onPress={() => openLink('https://apltrack.com/help')} external />
@@ -321,6 +363,16 @@ const styles = StyleSheet.create({
   settingsLabel: { flex: 1, marginLeft: 12 },
   signOutButton: { marginTop: 8 },
   version: { marginTop: 24 },
+  // Widget Card
+  widgetCard: { marginBottom: 0 },
+  widgetContent: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  widgetIconContainer: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  widgetInfo: { flex: 1 },
+  widgetDivider: { height: 1, marginBottom: 16 },
+  widgetInstructions: { marginBottom: 12 },
+  instructionStep: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  stepNumber: { width: 20, height: 20, borderRadius: 10, color: '#FFFFFF', fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 20, marginRight: 10, overflow: 'hidden' },
+  widgetNote: { marginTop: 8, fontStyle: 'italic' },
   // Edit Name Modal
   editNameContainer: { flex: 1 },
   editNameHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.1)' },

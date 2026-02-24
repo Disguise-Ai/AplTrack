@@ -4,9 +4,9 @@ const { WidgetDataModule } = NativeModules;
 
 export interface WidgetDataPayload {
   downloadsToday: number;
-  downloadsWeek: number;
-  revenue: number;
-  activeUsers: number;
+  totalDownloads: number;
+  revenueToday: number;
+  totalRevenue: number;
 }
 
 /**
@@ -27,9 +27,9 @@ export async function updateWidgetData(data: WidgetDataPayload): Promise<void> {
   try {
     await WidgetDataModule.updateWidgetData({
       downloadsToday: data.downloadsToday,
-      downloadsWeek: data.downloadsWeek,
-      revenue: data.revenue,
-      activeUsers: data.activeUsers,
+      totalDownloads: data.totalDownloads,
+      revenueToday: data.revenueToday,
+      totalRevenue: data.totalRevenue,
     });
     console.log('[WidgetData] Widget data updated successfully');
   } catch (error) {
