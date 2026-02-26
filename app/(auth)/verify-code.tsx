@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, useColorScheme, TextInput, TouchableOpacity, Alert, Animated } from 'react-native';
+import { View, StyleSheet, useColorScheme, TextInput, TouchableOpacity, Alert, Animated, Keyboard, InputAccessoryView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import { Text } from '@/components/ui/Text';
 import { supabase } from '@/lib/supabase';
 import { getProfile } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
+
+const INPUT_ACCESSORY_ID = 'verifyCodeInput';
 
 const CODE_LENGTH = 6;
 
@@ -39,10 +41,15 @@ export default function VerifyCodeScreen() {
     }
   }, [resendCooldown]);
 
-  // Auto-verify when code is complete
+  // Auto-verify when code is complete (with small delay for paste)
   useEffect(() => {
-    if (code.length === CODE_LENGTH) {
-      handleVerify();
+    if (code.length === CODE_LENGTH && !verifying) {
+      // Small delay to allow UI to update before verifying
+      const timer = setTimeout(() => {
+        console.log('Auto-verifying code...');
+        handleVerify();
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [code]);
 
@@ -98,7 +105,8 @@ export default function VerifyCodeScreen() {
       console.log('OTP verified, session:', !!data?.session, 'user:', !!data?.user);
 
       if (data?.session && data?.user) {
-        // Check if user has completed onboarding with timeout
+        // Check if user has profile = existing user goes to dashboard
+        // No profile = new user needs onboarding
         try {
           console.log('Checking profile for user:', data.user.id);
 
@@ -109,24 +117,40 @@ export default function VerifyCodeScreen() {
           );
 
           const profile = await Promise.race([profilePromise, timeoutPromise]);
-          console.log('Profile found, onboarding_completed:', profile?.onboarding_completed);
+          console.log('Profile found:', !!profile);
 
-          if (profile?.onboarding_completed) {
-            console.log('Navigating to dashboard');
+          if (profile) {
+            // Profile exists = existing user, go to dashboard
+            console.log('Existing user - navigating to dashboard');
             router.replace('/(tabs)/dashboard?refresh=true');
           } else {
-            console.log('Navigating to onboarding');
+            // No profile = new user, needs onboarding
+            console.log('New user - navigating to onboarding');
             router.replace('/(onboarding)/company');
           }
         } catch (profileError: any) {
-          // No profile yet or timeout, go to onboarding
-          console.log('Profile error (going to onboarding):', profileError?.message);
-          router.replace('/(onboarding)/company');
+          // Check if it's a "not found" error (new user) vs network error
+          const isNotFound = profileError?.message?.includes('not found') ||
+                             profileError?.message?.includes('No rows') ||
+                             profileError?.code === 'PGRST116';
+          console.log('Profile error:', profileError?.message, 'isNotFound:', isNotFound);
+          if (isNotFound) {
+            // New user - needs onboarding
+            router.replace('/(onboarding)/company');
+          } else {
+            // Network/timeout error - assume existing user, go to dashboard
+            router.replace('/(tabs)/dashboard?refresh=true');
+          }
         }
       } else {
-        // Session created but no user data - still try to navigate
-        console.log('No session/user, going to onboarding');
-        router.replace('/(onboarding)/company');
+        // Session created but no user data - try to get session
+        console.log('No session/user in response, checking current session');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          router.replace('/(tabs)/dashboard?refresh=true');
+        } else {
+          router.replace('/(auth)/sign-in');
+        }
       }
     } catch (error: any) {
       console.error('Verification error:', error);
@@ -168,8 +192,9 @@ export default function VerifyCodeScreen() {
   };
 
   const handleCodeChange = (text: string) => {
-    // Only allow numbers
+    // Only allow numbers - handle both typing and paste
     const cleaned = text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
+    console.log('Code changed:', cleaned.length, 'digits');
     setCode(cleaned);
   };
 
@@ -235,7 +260,29 @@ export default function VerifyCodeScreen() {
           keyboardType="number-pad"
           maxLength={CODE_LENGTH}
           autoFocus
+          inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
         />
+
+        {/* Done button for iOS number pad */}
+        {Platform.OS === 'ios' && (
+          <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
+            <View style={[styles.accessoryView, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={styles.doneButton}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  if (code.length === CODE_LENGTH) {
+                    handleVerify();
+                  }
+                }}
+              >
+                <Text variant="label" weight="semibold" style={{ color: colors.primary }}>
+                  {code.length === CODE_LENGTH ? 'Verify' : 'Done'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </InputAccessoryView>
+        )}
 
         {/* Code boxes */}
         <TouchableOpacity
@@ -269,13 +316,18 @@ export default function VerifyCodeScreen() {
 
       <View style={styles.buttons}>
         <Button
-          title={verifying ? "Verifying..." : "Verify"}
+          title={verifying ? "Verifying..." : "Continue"}
           onPress={handleVerify}
           loading={verifying}
           disabled={code.length !== CODE_LENGTH}
           size="large"
           style={styles.button}
         />
+        {code.length === CODE_LENGTH && !verifying && (
+          <Text variant="caption" color="secondary" align="center" style={{ marginTop: 8 }}>
+            Tap Continue or wait for auto-verify
+          </Text>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -342,4 +394,16 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   button: { width: '100%' },
+  accessoryView: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+  },
+  doneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
 });

@@ -4,6 +4,7 @@ import { getOfferings, purchasePackage, checkPremiumStatus, restorePurchases } f
 import { updateSubscription, getSubscription, startTrial } from '@/lib/api';
 import { useAuth } from './useAuth';
 import { supabase } from '@/lib/supabase';
+import { Config } from '@/constants/Config';
 
 // Free tier limits
 const FREE_TIER = {
@@ -76,7 +77,7 @@ export function useSubscription() {
           isPremiumFromDB = subscription.is_premium && !trialExpired &&
             (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
           expiresAt = subscription.expires_at || null;
-          isTrial = subscription.is_trial && !trialExpired || false;
+          isTrial = !!(subscription.is_trial && !trialExpired);
           trialStartedAt = subscription.trial_started_at || null;
           trialEndsAt = subscription.trial_ends_at || null;
         } catch (e) {
@@ -124,7 +125,11 @@ export function useSubscription() {
   }, [user]);
 
   useEffect(() => {
-    loadSubscriptionData();
+    // Only load subscription data when we have a user
+    // This prevents premature "not premium" state when auth is still loading
+    if (user) {
+      loadSubscriptionData();
+    }
   }, [user, loadSubscriptionData]);
 
   // Subscribe to realtime changes
@@ -156,11 +161,11 @@ export function useSubscription() {
       if (!customerInfo) {
         throw new Error('Purchase was not completed');
       }
-      const isPremium = customerInfo.entitlements.active['premium'] !== undefined;
+      const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
       await updateSubscription(
         user.id,
         isPremium,
-        customerInfo.entitlements.active['premium']?.expirationDate ?? undefined,
+        customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
         customerInfo.originalAppUserId
       );
       const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;
@@ -181,11 +186,11 @@ export function useSubscription() {
         setState((prev) => ({ ...prev, loading: false }));
         return null;
       }
-      const isPremium = customerInfo.entitlements.active['premium'] !== undefined;
+      const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
       await updateSubscription(
         user.id,
         isPremium,
-        customerInfo.entitlements.active['premium']?.expirationDate ?? undefined,
+        customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
         customerInfo.originalAppUserId
       );
       const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;

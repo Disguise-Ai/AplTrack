@@ -310,32 +310,45 @@ export async function syncAllDataSources(userId: string): Promise<{
   message?: string;
 }> {
   try {
-    // Add timeout to prevent infinite loading (8 seconds)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    console.log('[syncAllDataSources] Calling sync-all for user:', userId);
 
-    const { data, error } = await supabase.functions.invoke('sync-all', {
-      body: { user_id: userId },
-    });
+    // Use direct fetch like other functions (more reliable than supabase.functions.invoke)
+    const response = await fetch(
+      `https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/sync-all`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydGt0aWJjeHdzb3F2amxldGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzMyMjgsImV4cCI6MjA4NzEwOTIyOH0.2TXD5lBOeyhYcQWsVwhddi-NeWNShJT3m0to-fadrFw`,
+        },
+        body: JSON.stringify({ user_id: userId }),
+      }
+    );
 
-    clearTimeout(timeoutId);
+    console.log('[syncAllDataSources] Response status:', response.status);
 
-    if (error) {
-      console.log('Sync error (non-critical):', error.message);
-      return { synced: 0, failed: 0, message: error.message };
+    const data = await response.json();
+    console.log('[syncAllDataSources] Response data:', JSON.stringify(data));
+
+    if (!data.success) {
+      console.log('[syncAllDataSources] Sync failed:', data.error);
+      return { synced: 0, failed: 0, message: data.error };
+    }
+
+    // Log the raw metrics from RevenueCat for debugging
+    if (data.results?.[0]?.data?.raw_metrics) {
+      console.log('[syncAllDataSources] RAW RevenueCat metrics:', JSON.stringify(data.results[0].data.raw_metrics));
     }
 
     return {
-      synced: data?.synced || 0,
-      failed: data?.failed || 0,
-      results: data?.results,
-      error: data?.error,
-      message: data?.message
+      synced: data.results?.length || 0,
+      failed: 0,
+      results: data.results,
+      message: 'Sync complete'
     };
   } catch (err: any) {
-    console.log('Sync timeout or error:', err.message);
-    // Return empty result instead of throwing - sync failure shouldn't block refresh
-    return { synced: 0, failed: 0, message: 'Sync timed out' };
+    console.log('[syncAllDataSources] Error:', err.message);
+    return { synced: 0, failed: 0, message: err.message };
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, useColorScheme, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
 
 export default function CompanyScreen() {
@@ -16,12 +17,33 @@ export default function CompanyScreen() {
   const [companyName, setCompanyName] = useState('');
   const [appName, setAppName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fullName, setFullName] = useState<string | null>(null);
+
+  // Get full_name from auth metadata on mount
+  useEffect(() => {
+    const getAuthMetadata = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.user_metadata?.full_name) {
+        setFullName(user.user_metadata.full_name);
+      }
+    };
+    getAuthMetadata();
+  }, []);
 
   const handleNext = async () => {
     if (!companyName.trim() || !appName.trim()) return;
     setLoading(true);
     try {
-      await updateProfile({ company_name: companyName.trim(), app_name: appName.trim() });
+      // Save company info AND full_name from auth metadata to profile
+      const profileUpdate: { company_name: string; app_name: string; full_name?: string } = {
+        company_name: companyName.trim(),
+        app_name: appName.trim(),
+      };
+      // Include full_name if available from auth metadata
+      if (fullName) {
+        profileUpdate.full_name = fullName;
+      }
+      await updateProfile(profileUpdate);
       router.push('/(onboarding)/category');
     } catch (error: any) {
       console.error('Error saving company info:', error);

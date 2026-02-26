@@ -16,24 +16,6 @@ interface AnalyticsState {
   error: string | null;
 }
 
-function generateMockData(): { analytics: AnalyticsSnapshot[]; attribution: AttributionData[]; latestSnapshot: AnalyticsSnapshot } {
-  const today = new Date();
-  const analytics: AnalyticsSnapshot[] = [];
-  const attribution: AttributionData[] = [];
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const baseDownloads = 50 + Math.floor(Math.random() * 100);
-    const weekendBoost = [0, 6].includes(date.getDay()) ? 1.3 : 1;
-    analytics.push({ id: `mock-${i}`, app_id: 'demo', date: dateStr, downloads: Math.floor(baseDownloads * weekendBoost), revenue: parseFloat((baseDownloads * 0.5 * Math.random()).toFixed(2)), active_users: Math.floor(baseDownloads * 3 + Math.random() * 200), ratings_count: Math.floor(Math.random() * 10), average_rating: 4.2 + Math.random() * 0.6, created_at: new Date().toISOString() });
-    ['Twitter', 'Instagram', 'Reddit', 'Google', 'Direct'].forEach((source) => {
-      attribution.push({ id: `attr-${i}-${source}`, app_id: 'demo', source, campaign: undefined, downloads: Math.floor(baseDownloads * weekendBoost * (0.1 + Math.random() * 0.3)), date: dateStr, created_at: new Date().toISOString() });
-    });
-  }
-  return { analytics, attribution, latestSnapshot: analytics[analytics.length - 1] };
-}
-
 export function useAnalytics() {
   const { user } = useAuth();
   const [state, setState] = useState<AnalyticsState>({ apps: [], selectedApp: null, analytics: [], latestSnapshot: null, attribution: [], loading: true, syncing: false, error: null });
@@ -74,79 +56,74 @@ export function useAnalytics() {
           })));
         }
 
-        if (realtimeMetrics.length > 0) {
-          // Create analytics from realtime metrics - aggregate ALL sources
-          const metricsByDate = new Map<string, AnalyticsSnapshot>();
+        // Create analytics from realtime metrics - aggregate ALL sources
+        const metricsByDate = new Map<string, AnalyticsSnapshot>();
 
-          for (const m of realtimeMetrics) {
-            if (!metricsByDate.has(m.metric_date)) {
-              metricsByDate.set(m.metric_date, {
-                id: `realtime-${m.metric_date}`,
-                app_id: m.app_id,
-                date: m.metric_date,
-                downloads: 0,
-                revenue: 0,
-                active_users: 0,
-                ratings_count: 0,
-                average_rating: 0,
-                created_at: new Date().toISOString(),
-              });
-            }
-            const snapshot = metricsByDate.get(m.metric_date)!;
-
-            // Sum up metrics from all sources
-            switch (m.metric_type) {
-              case 'downloads_daily':
-              case 'downloads':
-              case 'new_customers':
-              case 'installs':
-                // Daily downloads - take max across apps for same day
-                snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
-                break;
-              case 'revenue':
-                snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
-                break;
-              case 'mrr':
-                // MRR is monthly - also add to revenue if no daily revenue
-                if (snapshot.revenue === 0) {
-                  snapshot.revenue = m.metric_value / 30; // Approximate daily from MRR
-                }
-                break;
-              case 'active_subscribers':
-              case 'active_users':
-              case 'daily_active_users':
-                snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
-                break;
-            }
+        for (const m of realtimeMetrics) {
+          if (!metricsByDate.has(m.metric_date)) {
+            metricsByDate.set(m.metric_date, {
+              id: `realtime-${m.metric_date}`,
+              app_id: m.app_id,
+              date: m.metric_date,
+              downloads: 0,
+              revenue: 0,
+              active_users: 0,
+              ratings_count: 0,
+              average_rating: 0,
+              created_at: new Date().toISOString(),
+            });
           }
+          const snapshot = metricsByDate.get(m.metric_date)!;
 
-          const analytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-          const latestDay = analytics[analytics.length - 1];
-          const totalDownloads = analytics.reduce((sum, a) => sum + a.downloads, 0);
-          console.log('[useAnalytics] Built analytics:', {
-            days: analytics.length,
-            latestDate: latestDay?.date,
-            latestDownloads: latestDay?.downloads,
-            totalDownloads,
-            latestRevenue: latestDay?.revenue,
-            latestActiveUsers: latestDay?.active_users
-          });
-
-          setState((prev) => ({ ...prev, analytics, latestSnapshot: analytics[analytics.length - 1] || null, loading: false }));
-        } else if (state.apps.length === 0) {
-          // No connected apps and no metrics - show mock data
-          console.log('[useAnalytics] No metrics, showing mock data');
-          const mockData = generateMockData();
-          setState((prev) => ({ ...prev, analytics: mockData.analytics, latestSnapshot: mockData.latestSnapshot, attribution: mockData.attribution, loading: false }));
-        } else {
-          // Has connected apps but no metrics yet - show zeros
-          console.log('[useAnalytics] Has apps but no metrics yet');
-          setState((prev) => ({ ...prev, analytics: [], latestSnapshot: null, loading: false }));
+          // Sum up metrics from all sources
+          switch (m.metric_type) {
+            case 'downloads_today':
+            case 'downloads_daily':
+            case 'downloads':
+            case 'new_customers':
+            case 'new_customers_28d':
+            case 'installs':
+              // Daily downloads - take max across apps for same day
+              snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
+              break;
+            case 'revenue_today':
+            case 'revenue':
+            case 'revenue_28d':
+              snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
+              break;
+            case 'mrr':
+              // MRR is monthly - also add to revenue if no daily revenue
+              if (snapshot.revenue === 0) {
+                snapshot.revenue = m.metric_value / 30; // Approximate daily from MRR
+              }
+              break;
+            case 'active_subscribers':
+            case 'active_users':
+            case 'active_users_current':
+            case 'daily_active_users':
+              snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
+              break;
+          }
         }
+
+        const analytics = Array.from(metricsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+        const latestDay = analytics[analytics.length - 1];
+        const totalDownloads = analytics.reduce((sum, a) => sum + a.downloads, 0);
+        console.log('[useAnalytics] Built analytics:', {
+          days: analytics.length,
+          latestDate: latestDay?.date,
+          latestDownloads: latestDay?.downloads,
+          totalDownloads,
+          latestRevenue: latestDay?.revenue,
+          latestActiveUsers: latestDay?.active_users
+        });
+
+        // NEVER show mock data - only real data or zeros
+        setState((prev) => ({ ...prev, analytics, latestSnapshot: analytics[analytics.length - 1] || null, loading: false }));
       } catch (error) {
         console.error('[useAnalytics] Error loading metrics:', error);
-        const mockData = generateMockData();
-        setState((prev) => ({ ...prev, analytics: mockData.analytics, latestSnapshot: mockData.latestSnapshot, attribution: mockData.attribution, loading: false }));
+        // On error, show empty data - NEVER fake data
+        setState((prev) => ({ ...prev, analytics: [], latestSnapshot: null, loading: false }));
       }
     };
 
@@ -189,14 +166,18 @@ export function useAnalytics() {
             }
             const snapshot = metricsByDate.get(m.metric_date)!;
             switch (m.metric_type) {
+              case 'downloads_today':
               case 'downloads_daily':
               case 'downloads':
               case 'new_customers':
+              case 'new_customers_28d':
               case 'installs':
                 // Daily downloads - take max across apps for same day
                 snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
                 break;
+              case 'revenue_today':
               case 'revenue':
+              case 'revenue_28d':
                 snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
                 break;
               case 'mrr':
@@ -207,6 +188,7 @@ export function useAnalytics() {
                 break;
               case 'active_subscribers':
               case 'active_users':
+              case 'active_users_current':
               case 'daily_active_users':
                 snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
                 break;
@@ -232,7 +214,7 @@ export function useAnalytics() {
       // Just load data from database - don't call external APIs here
       console.log('[syncAnalytics] Loading data for user:', user.id);
 
-      // First, refetch 28d totals
+      // Refetch live metrics from database
       const { data: apps } = await supabase
         .from('connected_apps')
         .select('id')
@@ -241,19 +223,100 @@ export function useAnalytics() {
 
       if (apps?.length) {
         const appIds = apps.map(a => a.id);
-        const { data: totalsMetrics } = await supabase
-          .from('realtime_metrics')
-          .select('metric_type, metric_value')
-          .in('app_id', appIds)
-          .in('metric_type', ['downloads_28d', 'revenue_28d']);
+        const today = new Date().toISOString().split('T')[0];
 
-        let downloads = 0, revenue = 0;
-        for (const m of totalsMetrics || []) {
-          if (m.metric_type === 'downloads_28d') downloads = m.metric_value;
-          if (m.metric_type === 'revenue_28d') revenue = m.metric_value;
+        // Calculate date range for last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        const weekStartDate = sevenDaysAgo.toISOString().split('T')[0];
+
+        // Get metrics for last 7 days
+        const { data: metrics } = await supabase
+          .from('realtime_metrics')
+          .select('metric_type, metric_value, metric_date')
+          .in('app_id', appIds)
+          .in('metric_type', [
+            // Real-time metrics
+            'active_subscriptions',
+            'active_trials',
+            'mrr',
+            // Daily snapshots
+            'downloads_today',
+            'revenue_today',
+            // 28-day totals
+            'new_customers_28d',
+            'new_customers',
+            'revenue_28d',
+            'revenue',
+            'active_users',
+          ])
+          .gte('metric_date', weekStartDate)
+          .order('metric_date', { ascending: false });
+
+        // Take the most recent value for each metric type
+        let activeSubscriptions = 0, activeTrials = 0, mrr = 0;
+        let newCustomers28d = 0, revenue28d = 0, activeUsers28d = 0;
+        let downloadsToday = 0, revenueToday = 0;
+        const seen: Record<string, boolean> = {};
+
+        // Track daily values for weekly sums
+        const dailyDownloads: Record<string, number> = {};
+        const dailyRevenue: Record<string, number> = {};
+
+        for (const m of metrics || []) {
+          // For daily metrics, aggregate by date for weekly totals
+          if (m.metric_type === 'downloads_today') {
+            dailyDownloads[m.metric_date] = Math.max(dailyDownloads[m.metric_date] || 0, m.metric_value);
+            if (m.metric_date === today) {
+              downloadsToday = Math.max(downloadsToday, m.metric_value);
+            }
+          }
+          if (m.metric_type === 'revenue_today') {
+            dailyRevenue[m.metric_date] = Math.max(dailyRevenue[m.metric_date] || 0, m.metric_value);
+            if (m.metric_date === today) {
+              revenueToday = Math.max(revenueToday, m.metric_value);
+            }
+          }
+
+          if (seen[m.metric_type]) continue;
+          seen[m.metric_type] = true;
+
+          // Real-time metrics
+          if (m.metric_type === 'active_subscriptions') activeSubscriptions = m.metric_value;
+          if (m.metric_type === 'active_trials') activeTrials = m.metric_value;
+          if (m.metric_type === 'mrr') mrr = m.metric_value;
+          // 28-day totals
+          if (m.metric_type === 'new_customers_28d' || m.metric_type === 'new_customers') newCustomers28d = m.metric_value;
+          if (m.metric_type === 'revenue_28d' || m.metric_type === 'revenue') revenue28d = m.metric_value;
+          if (m.metric_type === 'active_users') activeUsers28d = m.metric_value;
         }
-        setTotals28d({ downloads, revenue });
-        console.log('[syncAnalytics] Updated 28d totals:', { downloads, revenue });
+
+        // Calculate weekly totals from daily snapshots
+        const downloadsWeek = Object.values(dailyDownloads).reduce((sum, val) => sum + val, 0);
+        const revenueWeek = Object.values(dailyRevenue).reduce((sum, val) => sum + val, 0);
+
+        setLiveMetrics({
+          activeSubscriptions,
+          activeTrials,
+          mrr,
+          downloadsToday,
+          revenueToday,
+          downloadsWeek,
+          revenueWeek,
+          newCustomers28d,
+          revenue28d,
+          activeUsers28d
+        });
+
+        console.log('[syncAnalytics] LIVE metrics:', {
+          downloadsToday,
+          downloadsWeek,
+          revenueToday,
+          revenueWeek,
+          activeSubscriptions,
+          mrr,
+          newCustomers28d
+        });
       }
 
       // Load realtime metrics from database
@@ -282,14 +345,18 @@ export function useAnalytics() {
           }
           const snapshot = metricsByDate.get(m.metric_date)!;
           switch (m.metric_type) {
+            case 'downloads_today':
             case 'downloads_daily':
             case 'downloads':
             case 'new_customers':
+            case 'new_customers_28d':
             case 'installs':
               // Daily downloads - take max across apps for same day
               snapshot.downloads = Math.max(snapshot.downloads, m.metric_value);
               break;
+            case 'revenue_today':
             case 'revenue':
+            case 'revenue_28d':
               snapshot.revenue = Math.max(snapshot.revenue, m.metric_value);
               break;
             case 'mrr':
@@ -300,6 +367,7 @@ export function useAnalytics() {
               break;
             case 'active_subscribers':
             case 'active_users':
+            case 'active_users_current':
             case 'daily_active_users':
               snapshot.active_users = Math.max(snapshot.active_users, m.metric_value);
               break;
@@ -326,13 +394,28 @@ export function useAnalytics() {
     }
   }, [user]);
 
-  // Store 28d totals from special metrics
-  const [totals28d, setTotals28d] = useState({ downloads: 0, revenue: 0 });
+  // Store REAL-TIME metrics from RevenueCat
+  const [liveMetrics, setLiveMetrics] = useState({
+    // REAL-TIME metrics (update instantly)
+    activeSubscriptions: 0,   // Current active paid subscriptions
+    activeTrials: 0,          // Current active trials
+    mrr: 0,                   // Current MRR
+    // Daily snapshots
+    downloadsToday: 0,        // New customers today (from daily snapshot)
+    revenueToday: 0,          // Revenue today (from daily snapshot)
+    // Weekly totals (sum of last 7 daily snapshots)
+    downloadsWeek: 0,         // New customers this week
+    revenueWeek: 0,           // Revenue this week
+    // 28-day totals
+    newCustomers28d: 0,       // New customers in last 28 days
+    revenue28d: 0,            // Revenue in last 28 days
+    activeUsers28d: 0,        // Active users in last 28 days
+  });
 
-  // Fetch 28d totals directly from realtime_metrics
+  // Fetch REAL-TIME metrics from database
   useEffect(() => {
     if (!user) return;
-    const fetch28dTotals = async () => {
+    const fetchLiveMetrics = async () => {
       try {
         const { data: apps } = await supabase
           .from('connected_apps')
@@ -343,68 +426,177 @@ export function useAnalytics() {
         if (!apps?.length) return;
 
         const appIds = apps.map(a => a.id);
+        const today = new Date().toISOString().split('T')[0];
+
+        // Calculate date range for last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        const weekStartDate = sevenDaysAgo.toISOString().split('T')[0];
+
+        // Get the MOST RECENT metrics (ordered by date desc)
         const { data: metrics } = await supabase
           .from('realtime_metrics')
-          .select('metric_type, metric_value')
+          .select('metric_type, metric_value, metric_date')
           .in('app_id', appIds)
-          .in('metric_type', ['downloads_28d', 'revenue_28d']);
+          .in('metric_type', [
+            // Real-time metrics
+            'active_subscriptions',
+            'active_trials',
+            'mrr',
+            // Daily snapshots
+            'downloads_today',
+            'revenue_today',
+            // 28-day totals
+            'new_customers_28d',
+            'new_customers',
+            'revenue_28d',
+            'revenue',
+            'active_users',
+          ])
+          .gte('metric_date', weekStartDate)
+          .order('metric_date', { ascending: false });
 
-        let downloads = 0, revenue = 0;
+        // Take the most recent value for each metric type (for real-time metrics)
+        let activeSubscriptions = 0, activeTrials = 0, mrr = 0;
+        let newCustomers28d = 0, revenue28d = 0, activeUsers28d = 0;
+        let downloadsToday = 0, revenueToday = 0;
+        const seen: Record<string, boolean> = {};
+
+        // Track daily values for weekly sums
+        const dailyDownloads: Record<string, number> = {};
+        const dailyRevenue: Record<string, number> = {};
+
         for (const m of metrics || []) {
-          if (m.metric_type === 'downloads_28d') downloads = m.metric_value;
-          if (m.metric_type === 'revenue_28d') revenue = m.metric_value;
+          // For daily metrics, aggregate by date for weekly totals
+          if (m.metric_type === 'downloads_today') {
+            dailyDownloads[m.metric_date] = Math.max(dailyDownloads[m.metric_date] || 0, m.metric_value);
+            // Today's value
+            if (m.metric_date === today) {
+              downloadsToday = Math.max(downloadsToday, m.metric_value);
+            }
+          }
+          if (m.metric_type === 'revenue_today') {
+            dailyRevenue[m.metric_date] = Math.max(dailyRevenue[m.metric_date] || 0, m.metric_value);
+            // Today's value
+            if (m.metric_date === today) {
+              revenueToday = Math.max(revenueToday, m.metric_value);
+            }
+          }
+
+          // For other metrics, take most recent value
+          if (seen[m.metric_type]) continue;
+          seen[m.metric_type] = true;
+
+          // Real-time metrics
+          if (m.metric_type === 'active_subscriptions') activeSubscriptions = m.metric_value;
+          if (m.metric_type === 'active_trials') activeTrials = m.metric_value;
+          if (m.metric_type === 'mrr') mrr = m.metric_value;
+          // 28-day totals
+          if (m.metric_type === 'new_customers_28d' || m.metric_type === 'new_customers') newCustomers28d = m.metric_value;
+          if (m.metric_type === 'revenue_28d' || m.metric_type === 'revenue') revenue28d = m.metric_value;
+          if (m.metric_type === 'active_users') activeUsers28d = m.metric_value;
         }
-        setTotals28d({ downloads, revenue });
-        console.log('[useAnalytics] 28d totals from DB:', { downloads, revenue });
+
+        // Calculate weekly totals from daily snapshots
+        const downloadsWeek = Object.values(dailyDownloads).reduce((sum, val) => sum + val, 0);
+        const revenueWeek = Object.values(dailyRevenue).reduce((sum, val) => sum + val, 0);
+
+        console.log('[useAnalytics] Daily snapshots found:', {
+          dates: Object.keys(dailyDownloads),
+          dailyDownloads,
+          downloadsWeek,
+          dailyRevenue,
+          revenueWeek
+        });
+
+        setLiveMetrics({
+          activeSubscriptions,
+          activeTrials,
+          mrr,
+          downloadsToday,
+          revenueToday,
+          downloadsWeek,
+          revenueWeek,
+          newCustomers28d,
+          revenue28d,
+          activeUsers28d
+        });
+
+        console.log('[useAnalytics] LIVE metrics:', {
+          'Downloads Today': downloadsToday,
+          'Downloads Week': downloadsWeek,
+          'Revenue Today': revenueToday,
+          'Revenue Week': revenueWeek,
+          'Active Subscriptions': activeSubscriptions,
+          'MRR': mrr,
+          'New Customers (28d)': newCustomers28d
+        });
       } catch (e) {
-        console.error('[useAnalytics] Error fetching 28d totals:', e);
+        console.error('[useAnalytics] Error fetching live metrics:', e);
       }
     };
-    fetch28dTotals();
+    fetchLiveMetrics();
   }, [user, state.apps]);
 
   const stats = useMemo(() => {
-    const defaultStats = { downloadsToday: 0, downloadsWeek: 0, downloadsMonth: 0, totalDownloads: 0, revenueToday: 0, revenueWeek: 0, revenueMonth: 0, totalRevenue: 0, activeUsers: 0, averageRating: 0, ratingsCount: 0, downloadsChange: 0, revenueChange: 0 };
-
-    // Use EXACT 28d totals from database (not calculated)
-    const totalDownloads = totals28d.downloads;
-    const totalRevenue = totals28d.revenue;
-
-    // Calculate daily/weekly from exact totals
-    const dailyAvgDownloads = totalDownloads / 28;
-    const dailyAvgRevenue = totalRevenue / 28;
-    const weeklyDownloads = Math.round(dailyAvgDownloads * 7);
-    const weeklyRevenue = dailyAvgRevenue * 7;
-
-    // Get active users from analytics
-    const today = state.analytics[state.analytics.length - 1];
-    const activeUsers = today?.active_users || 0;
+    // REAL-TIME data from RevenueCat
+    const {
+      activeSubscriptions,
+      activeTrials,
+      mrr,
+      downloadsToday,
+      revenueToday,
+      downloadsWeek,
+      revenueWeek,
+      newCustomers28d,
+      revenue28d,
+      activeUsers28d,
+    } = liveMetrics;
 
     const stats = {
-      downloadsToday: Math.round(dailyAvgDownloads),
-      downloadsWeek: weeklyDownloads,
-      downloadsMonth: totalDownloads,
-      totalDownloads: totalDownloads,
-      revenueToday: dailyAvgRevenue,
-      revenueWeek: weeklyRevenue,
-      revenueMonth: totalRevenue,
-      totalRevenue: totalRevenue,
-      activeUsers,
-      averageRating: today?.average_rating || 0,
+      // REAL-TIME metrics (update instantly)
+      activeSubscriptions,                    // Current active paid subscriptions
+      activeTrials,                           // Current active trials
+      mrr,                                    // Current MRR
+
+      // Daily snapshots
+      downloadsToday,                         // New customers today
+      revenueToday,                           // Revenue today
+
+      // Weekly totals (sum of last 7 daily snapshots)
+      downloadsWeek,                          // New customers this week
+      revenueWeek,                            // Revenue this week
+
+      // 28-day totals from RevenueCat
+      newCustomers: newCustomers28d,          // New customers (28d)
+      revenue: revenue28d,                    // Revenue (28d)
+      activeUsers: activeUsers28d || newCustomers28d, // Active users (28d)
+
+      // Monthly/Total (using 28-day values)
+      downloadsMonth: newCustomers28d,
+      totalDownloads: newCustomers28d,
+      revenueMonth: revenue28d,
+      totalRevenue: revenue28d,
+
+      // Placeholders
+      averageRating: 0,
       ratingsCount: 0,
       downloadsChange: 0,
       revenueChange: 0
     };
 
-    console.log('[useAnalytics] Stats (from exact 28d totals):', {
-      totalDownloads: stats.totalDownloads,
-      totalRevenue: stats.totalRevenue,
-      downloadsToday: stats.downloadsToday,
-      revenueToday: stats.revenueToday
+    console.log('[useAnalytics] Stats:', {
+      'Downloads Today': stats.downloadsToday,
+      'Downloads Week': stats.downloadsWeek,
+      'Revenue Today': stats.revenueToday,
+      'Revenue Week': stats.revenueWeek,
+      'Active Subscriptions': stats.activeSubscriptions,
+      'MRR': stats.mrr,
+      'New Customers (28d)': stats.newCustomers
     });
 
     return stats;
-  }, [state.analytics, totals28d]);
+  }, [liveMetrics]);
 
   // Update widget data when stats change
   const prevStatsRef = useRef<typeof stats | null>(null);

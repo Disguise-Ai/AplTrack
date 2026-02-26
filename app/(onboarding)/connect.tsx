@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, useColorScheme, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Alert } from 'react-native';
+import { View, StyleSheet, useColorScheme, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Alert, Keyboard } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/hooks/useAuth';
 import { connectApp } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
 
 interface DataSource {
@@ -128,7 +129,19 @@ export default function ConnectScreen() {
   };
 
   const handleConnect = async () => {
-    if (!selectedSource || !user) return;
+    if (!selectedSource) return;
+
+    // Check session directly - state.user might be stale after sign in
+    let userId = user?.id;
+    if (!userId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    if (!userId) {
+      Alert.alert('Not Logged In', 'Please sign in to connect data sources');
+      return;
+    }
 
     // Validate all fields are filled
     const missingFields = selectedSource.fields.filter(f => !formData[f.key]?.trim());
@@ -137,10 +150,13 @@ export default function ConnectScreen() {
       return;
     }
 
+    // Dismiss keyboard before making the request
+    Keyboard.dismiss();
+
     setLoading(true);
     try {
       await connectApp({
-        user_id: user.id,
+        user_id: userId,
         provider: selectedSource.id,
         credentials: formData,
         app_store_app_id: formData.app_id || formData.app_token || '',

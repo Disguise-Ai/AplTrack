@@ -67,16 +67,30 @@ export default function CheckEmailScreen() {
   };
 
   // Navigate based on profile status
+  // If profile exists = existing user, go to dashboard
+  // If profile doesn't exist = new user, needs onboarding
   const navigateBasedOnProfile = async (userId: string) => {
     try {
       const profile = await getProfile(userId);
-      if (profile?.onboarding_completed) {
+      if (profile) {
+        // Profile exists = existing user, go to dashboard
         router.replace('/(tabs)/dashboard');
       } else {
+        // No profile = new user, needs onboarding
         router.replace('/(onboarding)/company');
       }
-    } catch {
-      router.replace('/(onboarding)/company');
+    } catch (error: any) {
+      // Check if it's a "not found" error (new user) vs network error
+      const isNotFound = error?.message?.includes('not found') ||
+                         error?.message?.includes('No rows') ||
+                         error?.code === 'PGRST116';
+      if (isNotFound) {
+        // New user - needs onboarding
+        router.replace('/(onboarding)/company');
+      } else {
+        // Network/other error - assume existing user, go to dashboard
+        router.replace('/(tabs)/dashboard');
+      }
     }
   };
 

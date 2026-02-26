@@ -11,6 +11,7 @@ interface AuthState {
   profile: Profile | null;
   loading: boolean;
   initialized: boolean;
+  profileLoadFailed: boolean; // Track if profile load failed (vs doesn't exist)
 }
 
 // Helper to add timeout to promises
@@ -22,7 +23,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
 };
 
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({ session: null, user: null, profile: null, loading: true, initialized: false });
+  const [state, setState] = useState<AuthState>({ session: null, user: null, profile: null, loading: true, initialized: false, profileLoadFailed: false });
 
   useEffect(() => {
     const initAuth = async () => {
@@ -36,24 +37,34 @@ export function useAuth() {
           if (error.message?.includes('Refresh Token') || error.message?.includes('Invalid')) {
             console.log('Clearing invalid session...');
             await supabase.auth.signOut();
-            setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+            setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });
             return;
           }
         }
 
         let profile: Profile | null = null;
+        let profileLoadFailed = false;
         if (session?.user) {
           try {
             profile = await withTimeout(getProfile(session.user.id), 5000);
-          } catch (error) {
-            console.log('Profile not found or timeout, will create on onboarding');
+          } catch (error: any) {
+            // Check if profile doesn't exist (new user) vs load failure (existing user)
+            const isNotFound = error?.message?.includes('not found') ||
+                               error?.message?.includes('No rows') ||
+                               error?.code === 'PGRST116';
+            if (isNotFound) {
+              console.log('Profile not found - new user needs onboarding');
+            } else {
+              console.log('Profile load failed (network/timeout) - existing user');
+              profileLoadFailed = true;
+            }
           }
           // Don't wait for RevenueCat - do it in background (skip on macOS)
           if (Platform.OS !== 'macos') {
             initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
           }
         }
-        setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true });
+        setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true, profileLoadFailed });
       } catch (error: any) {
         console.log('Auth init error (possibly timeout):', error);
         // Handle refresh token errors
@@ -62,27 +73,47 @@ export function useAuth() {
           try { await supabase.auth.signOut(); } catch (e) { /* ignore */ }
         }
         // On error/timeout, still mark as initialized so user can proceed
-        setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+        setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });
       }
     };
 
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, !!session);
+
+      // Handle sign out - don't try to reload profile
+      if (event === 'SIGNED_OUT' || !session) {
+        console.log('User signed out - clearing state');
+        setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });
+        return;
+      }
+
       // Handle token refresh errors
       if (event === 'TOKEN_REFRESHED' && !session) {
         console.log('Token refresh failed, clearing session');
-        setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+        setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });
         return;
       }
 
       let profile: Profile | null = null;
+      let profileLoadFailed = false;
       if (session?.user) {
-        try { profile = await getProfile(session.user.id); } catch (error) { console.log('Profile not found'); }
+        try {
+          profile = await getProfile(session.user.id);
+        } catch (error: any) {
+          const isNotFound = error?.message?.includes('not found') ||
+                             error?.message?.includes('No rows') ||
+                             error?.code === 'PGRST116';
+          if (!isNotFound) {
+            console.log('Profile load failed on auth change');
+            profileLoadFailed = true;
+          }
+        }
         // Don't wait for RevenueCat
         initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
       }
-      setState((prev) => ({ ...prev, session, user: session?.user ?? null, profile, loading: false, initialized: true }));
+      setState((prev) => ({ ...prev, session, user: session?.user ?? null, profile, loading: false, initialized: true, profileLoadFailed }));
     });
 
     return () => { subscription.unsubscribe(); };
@@ -111,11 +142,20 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
+    console.log('signOut called - starting sign out process');
     setState((prev) => ({ ...prev, loading: true }));
     try { await logOutRevenueCat(); } catch (error) { console.error('Error logging out of RevenueCat:', error); }
+
+    // Clear state BEFORE calling supabase signOut to prevent race conditions
+    setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });
+
+    // Now actually sign out from Supabase
     const { error } = await supabase.auth.signOut();
-    if (error) { setState((prev) => ({ ...prev, loading: false })); throw error; }
-    setState({ session: null, user: null, profile: null, loading: false, initialized: true });
+    if (error) {
+      console.error('Supabase signOut error:', error);
+      // Still keep state cleared even if there's an error
+    }
+    console.log('signOut complete - state cleared');
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -154,10 +194,12 @@ export function useAuth() {
     return profile;
   }, [state.user]);
 
-  // User needs onboarding if:
-  // 1. They have a session but no profile, OR
-  // 2. They have a profile but onboarding is not completed
-  const needsOnboarding = !!state.session && (!state.profile || !state.profile.onboarding_completed);
+  // User needs onboarding ONLY if:
+  // 1. They have a session AND
+  // 2. Profile doesn't exist (null AND not a load failure)
+  // IMPORTANT: If profile EXISTS in database, user is NOT new - skip onboarding
+  // IMPORTANT: If profile load failed (network/timeout), do NOT force onboarding
+  const needsOnboarding = !!state.session && !state.profileLoadFailed && !state.profile;
 
   return { ...state, signUp, signIn, signOut, refreshProfile, updateProfile: updateUserProfile, isAuthenticated: !!state.session, needsOnboarding };
 }

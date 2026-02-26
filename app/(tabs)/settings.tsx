@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, useColorScheme, ScrollView, TouchableOpacity, Alert, Linking, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,11 +16,29 @@ export default function SettingsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
-  const { user, profile, signOut, updateProfile } = useAuth();
+  const { user, profile, signOut, updateProfile, refreshProfile } = useAuth();
   const { isPremium, isTrial, trialEndsAt, monthlyPackage, purchase, restore, purchasing, beginTrial } = useSubscription();
+
+  // Refresh profile data when screen mounts
+  useEffect(() => {
+    if (user) {
+      refreshProfile();
+    }
+  }, [user]);
+
+  // Update form fields when profile loads
+  useEffect(() => {
+    if (profile) {
+      setNewName(profile.full_name || '');
+      setNewCompanyName(profile.company_name || '');
+      setNewAppName(profile.app_name || '');
+    }
+  }, [profile]);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [showEditName, setShowEditName] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [newName, setNewName] = useState(profile?.full_name || '');
+  const [newCompanyName, setNewCompanyName] = useState(profile?.company_name || '');
+  const [newAppName, setNewAppName] = useState(profile?.app_name || '');
   const [saving, setSaving] = useState(false);
 
   const handleSignOut = () => {
@@ -28,31 +46,44 @@ export default function SettingsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: async () => {
         try {
+          console.log('User confirmed sign out');
           await signOut();
-          router.replace('/(auth)/welcome');
+          console.log('Sign out completed, navigating to welcome');
+          // Use setTimeout to ensure state is cleared before navigation
+          setTimeout(() => {
+            router.replace('/(auth)/welcome');
+          }, 100);
         } catch (error) {
           console.error('Error signing out:', error);
+          // Still try to navigate even if there's an error
+          router.replace('/(auth)/welcome');
         }
       }}
     ]);
   };
 
-  const handleEditName = () => {
+  const handleEditProfile = () => {
     setNewName(profile?.full_name || '');
-    setShowEditName(true);
+    setNewCompanyName(profile?.company_name || '');
+    setNewAppName(profile?.app_name || '');
+    setShowEditProfile(true);
   };
 
-  const handleSaveName = async () => {
+  const handleSaveProfile = async () => {
     if (!newName.trim()) {
-      Alert.alert('Error', 'Please enter a name');
+      Alert.alert('Error', 'Please enter your name');
       return;
     }
     setSaving(true);
     try {
-      await updateProfile({ full_name: newName.trim() });
-      setShowEditName(false);
+      await updateProfile({
+        full_name: newName.trim(),
+        company_name: newCompanyName.trim() || null,
+        app_name: newAppName.trim() || null,
+      });
+      setShowEditProfile(false);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update name');
+      Alert.alert('Error', error.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -94,9 +125,9 @@ export default function SettingsScreen() {
           <Text variant="title" weight="bold">Settings</Text>
         </View>
 
-        {/* Profile Card - Clickable Name */}
+        {/* Profile Card - Clickable to Edit */}
         <Card style={styles.profileCard}>
-          <TouchableOpacity style={styles.profileContent} onPress={handleEditName} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.profileContent} onPress={handleEditProfile} activeOpacity={0.7}>
             <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}>
               <Text variant="title" weight="bold" color="accent">
                 {profile?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
@@ -108,8 +139,10 @@ export default function SettingsScreen() {
                 <Ionicons name="pencil" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
               </View>
               <Text variant="caption" color="secondary">{user?.email}</Text>
-              {profile?.company_name && (
-                <Text variant="caption" color="secondary">{profile.company_name}</Text>
+              {(profile?.company_name || profile?.app_name) && (
+                <Text variant="caption" color="secondary">
+                  {[profile?.company_name, profile?.app_name].filter(Boolean).join(' • ')}
+                </Text>
               )}
             </View>
             {isPremium && !isTrial && (
@@ -169,7 +202,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text variant="caption" color="secondary" style={styles.sectionTitle}>ACCOUNT</Text>
           <Card style={styles.sectionCard} padding={0}>
-            <SettingsItem icon="person-outline" label="Edit Profile" onPress={handleEditName} />
+            <SettingsItem icon="person-outline" label="Edit Profile" onPress={handleEditProfile} />
             <SettingsItem icon="notifications-outline" label="Notifications" onPress={() => {}} />
             <SettingsItem icon="card-outline" label="Subscription" onPress={() => setShowPaywall(true)} />
           </Card>
@@ -239,21 +272,21 @@ export default function SettingsScreen() {
         <Text variant="caption" color="secondary" align="center" style={styles.version}>Statly v1.0.0</Text>
       </ScrollView>
 
-      {/* Edit Name Modal */}
-      <Modal visible={showEditName} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEditName(false)}>
+      {/* Edit Profile Modal */}
+      <Modal visible={showEditProfile} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowEditProfile(false)}>
         <SafeAreaView style={[styles.editNameContainer, { backgroundColor: colors.background }]}>
           <View style={styles.editNameHeader}>
-            <TouchableOpacity onPress={() => setShowEditName(false)}>
+            <TouchableOpacity onPress={() => setShowEditProfile(false)}>
               <Text variant="body" color="secondary">Cancel</Text>
             </TouchableOpacity>
-            <Text variant="label" weight="semibold">Edit Name</Text>
-            <TouchableOpacity onPress={handleSaveName} disabled={saving}>
+            <Text variant="label" weight="semibold">Edit Profile</Text>
+            <TouchableOpacity onPress={handleSaveProfile} disabled={saving}>
               <Text variant="body" style={{ color: saving ? colors.textSecondary : colors.accent }}>
                 {saving ? 'Saving...' : 'Save'}
               </Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.editNameContent}>
+          <ScrollView style={styles.editNameContent}>
             <Text variant="caption" color="secondary" style={styles.editNameLabel}>YOUR NAME</Text>
             <TextInput
               style={[styles.nameInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -261,10 +294,32 @@ export default function SettingsScreen() {
               onChangeText={setNewName}
               placeholder="Enter your name"
               placeholderTextColor={colors.textSecondary}
-              autoFocus
               autoCapitalize="words"
             />
-          </View>
+
+            <Text variant="caption" color="secondary" style={[styles.editNameLabel, { marginTop: 24 }]}>COMPANY NAME</Text>
+            <TextInput
+              style={[styles.nameInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              value={newCompanyName}
+              onChangeText={setNewCompanyName}
+              placeholder="Enter your company name"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="words"
+            />
+
+            <Text variant="caption" color="secondary" style={[styles.editNameLabel, { marginTop: 24 }]}>APP NAME</Text>
+            <TextInput
+              style={[styles.nameInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              value={newAppName}
+              onChangeText={setNewAppName}
+              placeholder="Enter your app name"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="words"
+            />
+            <Text variant="caption" color="secondary" style={{ marginTop: 8 }}>
+              This name will appear on your dashboard
+            </Text>
+          </ScrollView>
         </SafeAreaView>
       </Modal>
 
@@ -376,7 +431,7 @@ const styles = StyleSheet.create({
   // Edit Name Modal
   editNameContainer: { flex: 1 },
   editNameHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  editNameContent: { padding: 24 },
+  editNameContent: { padding: 24, paddingBottom: 40 },
   editNameLabel: { marginBottom: 8 },
   nameInput: { fontSize: 17, padding: 16, borderRadius: 12, borderWidth: 1 },
   // Paywall

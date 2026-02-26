@@ -5,6 +5,7 @@ import { Text } from './ui/Text';
 import { Button } from './ui/Button';
 import { Colors } from '@/constants/Colors';
 import { useSubscription } from '@/hooks/useSubscription';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PaywallProps {
   visible: boolean;
@@ -123,7 +124,8 @@ interface LockedFeatureProps {
 }
 
 export function LockedFeature({ feature, featureTitle, children }: LockedFeatureProps) {
-  const { checkFeatureAccess, isPremium, loading } = useSubscription();
+  const { checkFeatureAccess, isPremium, loading: subscriptionLoading } = useSubscription();
+  const { loading: authLoading, user } = useAuth();
   const [showPaywall, setShowPaywall] = React.useState(false);
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -131,8 +133,11 @@ export function LockedFeature({ feature, featureTitle, children }: LockedFeature
   const hasAccess = checkFeatureAccess(feature);
 
   // Show content while loading to prevent flash for premium users
-  // Once loaded, hasAccess will be accurate
-  if (loading || hasAccess) {
+  // Wait for BOTH auth AND subscription to finish loading before showing paywall
+  // This prevents the flash where subscription errors before auth completes
+  const isLoading = subscriptionLoading || authLoading || !user;
+
+  if (isLoading || hasAccess) {
     return <>{children}</>;
   }
 

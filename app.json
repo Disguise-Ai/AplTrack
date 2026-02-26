@@ -16,12 +16,15 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.apltrack.app",
+      "appleTeamId": "XYQ5F2KNM5",
       "infoPlist": {
         "UIRequiredDeviceCapabilities": [],
         "UIApplicationSceneManifest": {
           "UIApplicationSupportsMultipleScenes": true
-        }
-      }
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "16"
     },
     "android": {
       "adaptiveIcon": {

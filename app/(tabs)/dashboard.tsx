@@ -29,7 +29,7 @@ export default function DashboardScreen() {
   const params = useLocalSearchParams<{ refresh?: string }>();
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { analytics, stats, syncing, syncAnalytics, apps, error: syncError } = useAnalytics();
   const { refresh: refreshSubscription } = useSubscription();
   const [connectedSources, setConnectedSources] = useState<ConnectedApp[]>([]);
@@ -65,11 +65,12 @@ export default function DashboardScreen() {
     }
   }, [user]);
 
-  // Refresh data when screen comes into focus (e.g., returning from data-sources)
+  // Refresh data when screen comes into focus (e.g., returning from settings or data-sources)
   useFocusEffect(
     useCallback(() => {
       if (user) {
         console.log('[Dashboard] Screen focused, refreshing data');
+        refreshProfile(); // Refresh profile to get updated app name, company name, etc.
         loadConnectedSources();
         syncAnalytics();
       }
@@ -100,7 +101,7 @@ export default function DashboardScreen() {
     }
   }, [user, params.refresh]);
 
-  // Auto-refresh every 10 minutes for live data (runs in background)
+  // Auto-refresh every 2 minutes for real-time data
   useEffect(() => {
     if (!user || !hasConnectedSources) return;
 
@@ -113,8 +114,8 @@ export default function DashboardScreen() {
         .catch(() => {});
     };
 
-    // Refresh every 10 minutes (600000ms)
-    const interval = setInterval(refreshData, 600000);
+    // Refresh every 2 minutes (120000ms) for real-time updates
+    const interval = setInterval(refreshData, 120000);
 
     return () => clearInterval(interval);
   }, [user, hasConnectedSources]);
@@ -182,10 +183,13 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
+          <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
             <Text variant="caption" color="secondary">{getGreeting()}</Text>
-            <Text variant="title" weight="bold">{profile?.app_name || 'Dashboard'}</Text>
-          </View>
+            <View style={styles.appNameRow}>
+              <Text variant="title" weight="bold">{profile?.app_name || 'Dashboard'}</Text>
+              <Ionicons name="pencil" size={14} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+            </View>
+          </TouchableOpacity>
           <View style={styles.headerRight}>
             {isLive ? (
               <View style={[styles.badge, { backgroundColor: colors.success + '20' }]}>
@@ -267,13 +271,13 @@ export default function DashboardScreen() {
           <StatCard
             title="Downloads Today"
             value={stats.downloadsToday}
-            subtitle="vs yesterday"
+            subtitle="new customers"
             icon="download-outline"
           />
           <StatCard
             title="Revenue Today"
             value={formatCurrency(stats.revenueToday)}
-            subtitle="vs yesterday"
+            subtitle="today"
             icon="cash-outline"
           />
         </View>
@@ -283,53 +287,70 @@ export default function DashboardScreen() {
           <StatCard
             title="Weekly Downloads"
             value={stats.downloadsWeek}
-            change={stats.downloadsChange}
-            icon="trending-up-outline"
+            subtitle="last 7 days"
+            icon="calendar-outline"
           />
           <StatCard
             title="Weekly Revenue"
             value={formatCurrency(stats.revenueWeek)}
-            change={stats.revenueChange}
+            subtitle="last 7 days"
             icon="wallet-outline"
+          />
+        </View>
+
+        {/* Real-Time Stats (from RevenueCat) */}
+        <View style={styles.statsRow}>
+          <StatCard
+            title="Active Subscriptions"
+            value={stats.activeSubscriptions}
+            subtitle="current"
+            icon="checkmark-circle-outline"
+          />
+          <StatCard
+            title="MRR"
+            value={formatCurrency(stats.mrr)}
+            subtitle="monthly recurring"
+            icon="trending-up-outline"
           />
         </View>
 
         {/* Chart */}
         <Card style={styles.chartCard}>
           <View style={styles.chartHeader}>
-            <Text variant="label" weight="semibold">Downloads (Last 28 Days)</Text>
-            <Text variant="caption" color="secondary">{stats.downloadsMonth.toLocaleString()} total</Text>
+            <Text variant="label" weight="semibold">New Customers (Last 28 Days)</Text>
+            <Text variant="caption" color="secondary">{stats.newCustomers.toLocaleString()} total</Text>
           </View>
           <LineChart data={chartData} labels={chartLabels} height={200} />
         </Card>
 
-        {/* Additional Stats */}
+        {/* 28-Day Stats */}
         <View style={styles.statsRow}>
+          <StatCard
+            title="New Customers"
+            value={stats.newCustomers}
+            subtitle="last 28 days"
+            icon="person-add-outline"
+          />
           <StatCard
             title="Active Users"
             value={stats.activeUsers}
+            subtitle="last 28 days"
             icon="people-outline"
-          />
-          <StatCard
-            title="Avg Rating"
-            value={stats.averageRating.toFixed(1)}
-            subtitle={`${stats.ratingsCount} reviews`}
-            icon="star-outline"
           />
         </View>
 
-        {/* Monthly Overview */}
+        {/* 28-Day Overview */}
         <Card style={styles.overviewCard}>
-          <Text variant="label" weight="semibold" style={styles.overviewTitle}>Monthly Overview</Text>
+          <Text variant="label" weight="semibold" style={styles.overviewTitle}>28-Day Overview</Text>
           <View style={styles.overviewRow}>
             <View style={styles.overviewItem}>
-              <Text variant="caption" color="secondary">Total Downloads</Text>
-              <Text variant="subtitle" weight="bold">{stats.downloadsMonth.toLocaleString()}</Text>
+              <Text variant="caption" color="secondary">New Customers</Text>
+              <Text variant="subtitle" weight="bold">{stats.newCustomers.toLocaleString()}</Text>
             </View>
             <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
             <View style={styles.overviewItem}>
               <Text variant="caption" color="secondary">Total Revenue</Text>
-              <Text variant="subtitle" weight="bold">{formatCurrency(stats.revenueMonth)}</Text>
+              <Text variant="subtitle" weight="bold">{formatCurrency(stats.revenue)}</Text>
             </View>
           </View>
         </Card>
@@ -374,6 +395,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
+  appNameRow: { flexDirection: 'row', alignItems: 'center' },
   headerRight: { flexDirection: 'row', gap: 8 },
   badge: {
     flexDirection: 'row',

@@ -10,6 +10,7 @@ interface InputProps extends TextInputProps {
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightIcon?: keyof typeof Ionicons.glyphMap;
   onRightIconPress?: () => void;
+  onDone?: () => void;
 }
 
 export function Input({
@@ -20,6 +21,8 @@ export function Input({
   rightIcon,
   onRightIconPress,
   secureTextEntry,
+  onDone,
+  returnKeyType = 'done',
   ...props
 }: InputProps) {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -69,6 +72,9 @@ export function Input({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={isPassword && !showPassword}
+          returnKeyType={returnKeyType}
+          blurOnSubmit={true}
+          onSubmitEditing={onDone}
           {...props}
         />
         {isPassword && (

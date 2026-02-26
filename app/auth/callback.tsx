@@ -29,18 +29,33 @@ export default function AuthCallbackScreen() {
           setMessage('Email verified! Taking you to setup...');
 
           // Check profile and navigate
+          // If profile exists, user is NOT new - go to dashboard
+          // Only send to onboarding if profile doesn't exist (new user)
           try {
             const profile = await getProfile(session.user.id);
             setTimeout(() => {
-              if (profile?.onboarding_completed) {
+              if (profile) {
+                // Profile exists = existing user, go to dashboard
                 router.replace('/(tabs)/dashboard');
               } else {
+                // No profile = new user, needs onboarding
                 router.replace('/(onboarding)/company');
               }
             }, 1500);
-          } catch {
+          } catch (error: any) {
+            // Check if it's a "not found" error (new user) vs network error
+            const isNotFound = error?.message?.includes('not found') ||
+                               error?.message?.includes('No rows') ||
+                               error?.code === 'PGRST116';
             setTimeout(() => {
-              router.replace('/(onboarding)/company');
+              if (isNotFound) {
+                // New user - needs onboarding
+                router.replace('/(onboarding)/company');
+              } else {
+                // Network/other error - assume existing user, go to dashboard
+                // They'll be re-validated by the main auth logic
+                router.replace('/(tabs)/dashboard');
+              }
             }, 1500);
           }
         } else {

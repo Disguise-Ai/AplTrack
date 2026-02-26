@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, useColorScheme, ScrollView, TouchableOpacity, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, useColorScheme, ScrollView, TouchableOpacity, Alert, Modal, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
 import { getConnectedApps, connectApp, disconnectApp, updateAppCredentials, syncAllDataSources } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
+import { supabase } from '@/lib/supabase';
 import type { ConnectedApp } from '@/lib/supabase';
 
 interface DataSource {
@@ -186,6 +188,7 @@ const DATA_SOURCES: DataSource[] = [
 export default function DataSourcesScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { canAddDataSource, isPremium, maxDataSources } = useSubscription();
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const [connectedApps, setConnectedApps] = useState<ConnectedApp[]>([]);
@@ -197,14 +200,23 @@ export default function DataSourcesScreen() {
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
 
   useEffect(() => {
+    // Load on mount and when user changes
     loadConnectedApps();
-  }, [user]);
+  }, []);
 
   const loadConnectedApps = async () => {
-    if (!user) return;
+    // Check session directly - state.user might be stale
+    let userId = user?.id;
+    if (!userId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    if (!userId) return;
+
     setRefreshing(true);
     try {
-      const apps = await getConnectedApps(user.id);
+      const apps = await getConnectedApps(userId);
       setConnectedApps(apps);
     } catch (error) {
       console.error('Error loading apps:', error);
@@ -218,10 +230,19 @@ export default function DataSourcesScreen() {
       Alert.alert('Error', 'No source selected');
       return;
     }
-    if (!user) {
+
+    // Check session directly - state.user might be stale
+    let userId = user?.id;
+    if (!userId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    if (!userId) {
       Alert.alert('Not Logged In', 'Please sign in to connect data sources');
       return;
     }
+
     const missingFields = selectedSource.fields.filter(f => !formData[f.key]?.trim());
     if (missingFields.length > 0) {
       Alert.alert('Missing Fields', `Please fill in: ${missingFields.map(f => f.label).join(', ')}`);
@@ -237,7 +258,7 @@ export default function DataSourcesScreen() {
     setLoading(true);
     try {
       await connectApp({
-        user_id: user.id,
+        user_id: userId,
         provider: selectedSource.id,
         credentials: trimmedCredentials,
         app_store_app_id: trimmedCredentials.app_id || trimmedCredentials.project_id || trimmedCredentials.app_token || '',
@@ -253,7 +274,7 @@ export default function DataSourcesScreen() {
       closeModal();
 
       // Trigger sync in background
-      syncAllDataSources(user.id).then(() => {
+      syncAllDataSources(userId).then(() => {
         Alert.alert('Sync Complete', 'Your data has been synced. Check the Dashboard!');
       }).catch((err) => {
         console.log('Auto-sync error:', err);
@@ -319,6 +340,18 @@ export default function DataSourcesScreen() {
   };
 
   const openAddModal = (source: DataSource) => {
+    // Check free tier limit
+    if (!canAddDataSource(connectedApps.length)) {
+      Alert.alert(
+        'Upgrade Required',
+        `Free accounts can connect up to ${maxDataSources} data sources. Upgrade to Premium for unlimited integrations.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Upgrade', onPress: () => router.push('/settings') }
+        ]
+      );
+      return;
+    }
     setSelectedSource(source);
     setEditingApp(null);
     setFormData({});
@@ -436,18 +469,20 @@ export default function DataSourcesScreen() {
       {/* Add/Edit Modal */}
       <Modal visible={!!selectedSource} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={closeModal}>
-                <Ionicons name="close" size={28} color={colors.text} />
-              </TouchableOpacity>
-              <Text variant="label" weight="semibold">
-                {modalMode === 'edit' ? 'Update API Key' : 'Add Integration'}
-              </Text>
-              <View style={{ width: 28 }} />
-            </View>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={closeModal}>
+                    <Ionicons name="close" size={28} color={colors.text} />
+                  </TouchableOpacity>
+                  <Text variant="label" weight="semibold">
+                    {modalMode === 'edit' ? 'Update API Key' : 'Add Integration'}
+                  </Text>
+                  <View style={{ width: 28 }} />
+                </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent}>
+                <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
               {selectedSource && (
                 <>
                   <View style={styles.sourceHeaderModal}>
@@ -475,7 +510,7 @@ export default function DataSourcesScreen() {
                   )}
 
                   <View style={styles.form}>
-                    {selectedSource.fields.map((field) => (
+                    {selectedSource.fields.map((field, index) => (
                       <Input
                         key={field.key}
                         label={field.label}
@@ -486,6 +521,10 @@ export default function DataSourcesScreen() {
                         multiline={field.multiline}
                         numberOfLines={field.multiline ? 4 : 1}
                         autoCapitalize="none"
+                        returnKeyType={index === selectedSource.fields.length - 1 ? 'done' : 'next'}
+                        onDone={() => {
+                          Keyboard.dismiss();
+                        }}
                       />
                     ))}
                   </View>
@@ -512,6 +551,8 @@ export default function DataSourcesScreen() {
                 </>
               )}
             </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
