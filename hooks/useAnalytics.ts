@@ -317,6 +317,21 @@ export function useAnalytics() {
           mrr,
           newCustomers28d
         });
+      } else {
+        // No connected apps - reset all metrics to zero
+        setLiveMetrics({
+          activeSubscriptions: 0,
+          activeTrials: 0,
+          mrr: 0,
+          downloadsToday: 0,
+          revenueToday: 0,
+          downloadsWeek: 0,
+          revenueWeek: 0,
+          newCustomers28d: 0,
+          revenue28d: 0,
+          activeUsers28d: 0,
+        });
+        console.log('[syncAnalytics] No connected apps - reset all metrics to zero');
       }
 
       // Load realtime metrics from database
@@ -423,7 +438,23 @@ export function useAnalytics() {
           .eq('user_id', user.id)
           .eq('is_active', true);
 
-        if (!apps?.length) return;
+        if (!apps?.length) {
+          // No connected apps - reset all metrics to zero
+          setLiveMetrics({
+            activeSubscriptions: 0,
+            activeTrials: 0,
+            mrr: 0,
+            downloadsToday: 0,
+            revenueToday: 0,
+            downloadsWeek: 0,
+            revenueWeek: 0,
+            newCustomers28d: 0,
+            revenue28d: 0,
+            activeUsers28d: 0,
+          });
+          console.log('[useAnalytics] No connected apps - reset all metrics to zero');
+          return;
+        }
 
         const appIds = apps.map(a => a.id);
         const today = new Date().toISOString().split('T')[0];

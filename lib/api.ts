@@ -102,8 +102,21 @@ export async function getConnectedProviders(userId: string): Promise<string[]> {
 }
 
 export async function disconnectApp(appId: string): Promise<void> {
+  // First, delete all metrics data for this app
+  const { error: metricsError } = await supabase
+    .from('realtime_metrics')
+    .delete()
+    .eq('app_id', appId);
+
+  if (metricsError) {
+    console.error('[disconnectApp] Error deleting metrics:', metricsError);
+  }
+
+  // Then delete the connected app entry
   const { error } = await supabase.from('connected_apps').delete().eq('id', appId);
   if (error) throw error;
+
+  console.log('[disconnectApp] Removed app and all associated metrics data');
 }
 
 export async function updateAppCredentials(appId: string, credentials: Record<string, string>, provider?: string): Promise<ConnectedApp> {
