@@ -48,6 +48,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="ai-models"
+        options={{
+          title: 'AI Models',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="hardware-chip" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="chat"
         options={{
           title: 'AI Chat',
@@ -59,6 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="leaderboard"
         options={{
+          href: null, // Hide from tab bar but keep accessible
           title: 'Leaderboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="trophy" size={size} color={color} />

@@ -3,7 +3,7 @@ import { Text as RNText, TextProps as RNTextProps, StyleSheet, useColorScheme } 
 import { Colors } from '@/constants/Colors';
 
 interface TextProps extends RNTextProps {
-  variant?: 'hero' | 'title' | 'subtitle' | 'body' | 'caption' | 'label' | 'mono';
+  variant?: 'hero' | 'title' | 'subtitle' | 'body' | 'caption' | 'label' | 'mono' | 'micro';
   color?: 'primary' | 'secondary' | 'tertiary' | 'accent' | 'error' | 'success';
   weight?: 'regular' | 'medium' | 'semibold' | 'bold';
   align?: 'left' | 'center' | 'right';
@@ -54,6 +54,8 @@ export function Text({
         return styles.label;
       case 'mono':
         return styles.mono;
+      case 'micro':
+        return styles.micro;
       default:
         return styles.body;
     }
@@ -126,5 +128,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontFamily: 'monospace',
+  },
+  micro: {
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 0.2,
   },
 });
