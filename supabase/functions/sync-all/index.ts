@@ -6,11 +6,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Get date in EST timezone (handles EDT/EST automatically)
+function getESTDate(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+// Get yesterday's date in EST timezone
+function getESTYesterday(): string {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return getESTDate(yesterday);
+}
+
+// Get date N days ago in EST timezone
+function getESTDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return getESTDate(date);
+}
+
 async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boolean; data?: any; error?: string }> {
   const credentials = app.credentials || {};
   const apiKey = (credentials.api_key || "").trim();
   let projectId = (credentials.project_id || credentials.app_id || "").trim();
-  const today = new Date().toISOString().split("T")[0];
+  // Use EST timezone for date calculations
+  const today = getESTDate();
+  console.log(`[RC] Using EST date: ${today}`);
 
   if (!apiKey) {
     return { success: false, error: "No API key" };
@@ -69,10 +90,9 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
 
   const metricsToInsert = [];
 
-  // Get yesterday's date
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  // Get yesterday's date in EST timezone
+  const yesterdayStr = getESTYesterday();
+  console.log(`[RC] Yesterday (EST): ${yesterdayStr}`);
 
   // ALWAYS calculate downloads_today from yesterday's final value
   // Look across ALL apps for this user (in case app was reconnected with new ID)
@@ -170,9 +190,8 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
   console.log(`[RC] TODAY's FINAL stats: downloads_today=${downloadsToday}, revenue_today=$${revenueToday}, total_customers=${newCustomers}`);
 
   // Fetch REAL daily breakdown from RevenueCat Charts API for last 7 days
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const startDate = sevenDaysAgo.toISOString().split("T")[0];
+  const startDate = getESTDaysAgo(6);
+  console.log(`[RC] Fetching charts from ${startDate} to ${today} (EST)`);
   let chartsApiStatus = "not_called";
   let chartsApiResponse = "";
 
