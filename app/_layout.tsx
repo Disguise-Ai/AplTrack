@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
+import { configureSuperwall } from '@/lib/superwall';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -15,6 +16,9 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
+    // Initialize Superwall
+    configureSuperwall();
+
     // Handle deep links for auth
     const handleDeepLink = async (url: string) => {
       console.log('Deep link received:', url);

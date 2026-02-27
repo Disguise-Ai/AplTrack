@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, useColorScheme, Modal, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './ui/Text';
@@ -6,6 +6,7 @@ import { Button } from './ui/Button';
 import { Colors } from '@/constants/Colors';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useAuth } from '@/hooks/useAuth';
+import { showPaywall as showSuperwallPaywall } from '@/lib/superwall';
 
 interface PaywallProps {
   visible: boolean;
@@ -41,6 +42,18 @@ export function Paywall({ visible, onClose, feature }: PaywallProps) {
   };
 
   const handlePurchase = async () => {
+    // Try Superwall first for managed paywalls
+    try {
+      const purchased = await showSuperwallPaywall('pro_upgrade');
+      if (purchased) {
+        onClose();
+        return;
+      }
+    } catch (superwallError) {
+      console.log('[Paywall] Superwall not available, falling back to RevenueCat');
+    }
+
+    // Fall back to RevenueCat
     if (!monthlyPackage) {
       // RevenueCat not configured yet - start trial instead
       await handleStartTrial();
@@ -124,13 +137,29 @@ interface LockedFeatureProps {
 }
 
 export function LockedFeature({ feature, featureTitle, children }: LockedFeatureProps) {
-  const { checkFeatureAccess, isPremium, loading: subscriptionLoading } = useSubscription();
+  const { checkFeatureAccess, isPremium, loading: subscriptionLoading, refresh } = useSubscription();
   const { loading: authLoading, user } = useAuth();
   const [showPaywall, setShowPaywall] = React.useState(false);
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
   const hasAccess = checkFeatureAccess(feature);
+
+  // Handle unlock button press - try Superwall first
+  const handleUnlock = async () => {
+    try {
+      const purchased = await showSuperwallPaywall(feature);
+      if (purchased) {
+        // Refresh subscription status after purchase
+        await refresh();
+        return;
+      }
+    } catch (error) {
+      console.log('[LockedFeature] Superwall not available, showing fallback paywall');
+    }
+    // Show fallback paywall if Superwall didn't handle it
+    setShowPaywall(true);
+  };
 
   // Show content while loading to prevent flash for premium users
   // Wait for BOTH auth AND subscription to finish loading before showing paywall
@@ -155,7 +184,7 @@ export function LockedFeature({ feature, featureTitle, children }: LockedFeature
         </Text>
         <Button
           title="Unlock Pro"
-          onPress={() => setShowPaywall(true)}
+          onPress={handleUnlock}
           size="large"
           style={styles.unlockButton}
         />

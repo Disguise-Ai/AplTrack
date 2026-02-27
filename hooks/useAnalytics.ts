@@ -5,6 +5,17 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 import { updateWidgetData } from '@/lib/widgetData';
 
+// Helper functions for EST timezone (matching backend)
+function getESTDate(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+function getESTDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return getESTDate(date);
+}
+
 interface AnalyticsState {
   apps: ConnectedApp[];
   selectedApp: ConnectedApp | null;
@@ -223,12 +234,10 @@ export function useAnalytics() {
 
       if (apps?.length) {
         const appIds = apps.map(a => a.id);
-        const today = new Date().toISOString().split('T')[0];
+        const today = getESTDate(); // Use EST timezone
 
-        // Calculate date range for last 7 days
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-        const weekStartDate = sevenDaysAgo.toISOString().split('T')[0];
+        // Calculate date range for last 7 days (EST)
+        const weekStartDate = getESTDaysAgo(6);
 
         // Get metrics for last 7 days
         const { data: metrics } = await supabase
@@ -457,12 +466,10 @@ export function useAnalytics() {
         }
 
         const appIds = apps.map(a => a.id);
-        const today = new Date().toISOString().split('T')[0];
+        const today = getESTDate(); // Use EST timezone
 
-        // Calculate date range for last 7 days
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-        const weekStartDate = sevenDaysAgo.toISOString().split('T')[0];
+        // Calculate date range for last 7 days (EST)
+        const weekStartDate = getESTDaysAgo(6);
 
         // Get the MOST RECENT metrics (ordered by date desc)
         const { data: metrics } = await supabase
