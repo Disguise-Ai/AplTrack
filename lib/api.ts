@@ -300,8 +300,24 @@ export async function getSubscription(userId: string): Promise<{
 }
 
 export async function startTrial(userId: string): Promise<void> {
-  const { error } = await supabase.rpc('start_user_trial', { p_user_id: userId });
+  // Calculate 72-hour trial expiration
+  const trialEndsAt = new Date();
+  trialEndsAt.setHours(trialEndsAt.getHours() + 72);
+
+  // Create or update subscription with trial
+  const { error } = await supabase
+    .from('subscriptions')
+    .upsert({
+      user_id: userId,
+      is_premium: true,
+      expires_at: trialEndsAt.toISOString(),
+      revenuecat_customer_id: null,
+    }, {
+      onConflict: 'user_id'
+    });
+
   if (error) throw error;
+  console.log('[startTrial] Trial started for user:', userId, 'expires:', trialEndsAt.toISOString());
 }
 
 export async function updateSubscription(userId: string, isPremium: boolean, expiresAt?: string, revenuecatCustomerId?: string): Promise<void> {
