@@ -22,9 +22,10 @@
         "UIApplicationSceneManifest": {
           "UIApplicationSupportsMultipleScenes": true
         },
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIApplicationSupportsIndirectInputEvents": true
       },
-      "buildNumber": "16"
+      "buildNumber": "17"
     },
     "android": {
       "adaptiveIcon": {
