@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Share, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,15 +80,49 @@ export default function AttributionScreen() {
     }
   };
 
-  const totalClicks = stats.reduce((sum, s) => sum + s.clicks, 0);
-  const totalInstalls = stats.reduce((sum, s) => sum + s.installs, 0);
-  const totalRevenue = stats.reduce((sum, s) => sum + s.revenue, 0);
+  // Memoize totals - only recalculate when stats change
+  const { totalClicks, totalInstalls, totalRevenue } = useMemo(() => ({
+    totalClicks: stats.reduce((sum, s) => sum + s.clicks, 0),
+    totalInstalls: stats.reduce((sum, s) => sum + s.installs, 0),
+    totalRevenue: stats.reduce((sum, s) => sum + s.revenue, 0),
+  }), [stats]);
 
-  const getSourceInfo = (source: string) => {
+  const getSourceInfo = useCallback((source: string) => {
     return SOURCE_ICONS[source] || { icon: 'globe-outline', color: colors.primary };
-  };
+  }, [colors.primary]);
 
   const hasData = stats.length > 0;
+
+  // Memoize merged sources list - heavy computation done once
+  const mergedSources = useMemo(() => {
+    const defaultSources = [
+      { source: 'Twitter', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'Instagram', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'TikTok', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'Reddit', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'Facebook', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'YouTube', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'LinkedIn', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'Google', clicks: 0, installs: 0, revenue: 0 },
+      { source: 'direct', clicks: 0, installs: 0, revenue: 0 },
+    ];
+
+    // Merge real data with defaults
+    const merged = defaultSources.map(def => {
+      const real = stats.find(s => s.source.toLowerCase() === def.source.toLowerCase());
+      return real || def;
+    });
+
+    // Add any sources from real data not in defaults
+    stats.forEach(s => {
+      if (!merged.find(m => m.source.toLowerCase() === s.source.toLowerCase())) {
+        merged.push(s);
+      }
+    });
+
+    // Sort by clicks descending
+    return merged.sort((a, b) => b.clicks - a.clicks);
+  }, [stats]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -173,35 +207,7 @@ export default function AttributionScreen() {
           </View>
 
           {/* Show all traffic sources - 0 until data comes in */}
-          {(() => {
-            const defaultSources = [
-              { source: 'Twitter', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'Instagram', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'TikTok', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'Reddit', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'Facebook', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'YouTube', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'LinkedIn', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'Google', clicks: 0, installs: 0, revenue: 0 },
-              { source: 'direct', clicks: 0, installs: 0, revenue: 0 },
-            ];
-
-            // Merge real data with defaults
-            const merged = defaultSources.map(def => {
-              const real = stats.find(s => s.source.toLowerCase() === def.source.toLowerCase());
-              return real || def;
-            });
-
-            // Add any sources from real data not in defaults
-            stats.forEach(s => {
-              if (!merged.find(m => m.source.toLowerCase() === s.source.toLowerCase())) {
-                merged.push(s);
-              }
-            });
-
-            // Sort by clicks descending
-            return merged.sort((a, b) => b.clicks - a.clicks);
-          })().map((item, index) => {
+          {mergedSources.map((item, index) => {
             const convRate = item.clicks > 0 ? ((item.installs / item.clicks) * 100).toFixed(1) : '0';
             const sourceInfo = getSourceInfo(item.source);
 

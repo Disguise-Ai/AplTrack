@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, useColorScheme } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, useColorScheme, ViewStyle } from 'react-native';
 import { Text } from './ui/Text';
 import { Colors } from '@/constants/Colors';
 
@@ -10,33 +10,35 @@ interface ChatMessageProps {
   showTail?: boolean;
 }
 
-export function ChatMessage({ message, isUser, timestamp, showTail = true }: ChatMessageProps) {
+export const ChatMessage = React.memo(function ChatMessage({
+  message,
+  isUser,
+  timestamp,
+  showTail = true,
+}: ChatMessageProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
+  // Memoize bubble style to prevent re-creation
+  const bubbleStyle = useMemo((): ViewStyle => {
+    if (isUser) {
+      return {
+        backgroundColor: '#A78BFA',
+        borderBottomRightRadius: showTail ? 4 : 20,
+      };
+    }
+    return {
+      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E9E9EB',
+      borderBottomLeftRadius: showTail ? 4 : 20,
+    };
+  }, [isUser, showTail, colorScheme]);
+
+  const textColor = isUser ? '#FFFFFF' : colors.text;
+
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.botContainer]}>
-      <View
-        style={[
-          styles.bubble,
-          isUser
-            ? {
-                backgroundColor: '#A78BFA',
-                borderBottomRightRadius: showTail ? 4 : 20,
-              }
-            : {
-                backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E9E9EB',
-                borderBottomLeftRadius: showTail ? 4 : 20,
-              },
-        ]}
-      >
-        <Text
-          variant="body"
-          style={[
-            styles.messageText,
-            { color: isUser ? '#FFFFFF' : colors.text },
-          ]}
-        >
+      <View style={[styles.bubble, bubbleStyle]}>
+        <Text variant="body" style={[styles.messageText, { color: textColor }]}>
           {message}
         </Text>
       </View>
@@ -44,17 +46,14 @@ export function ChatMessage({ message, isUser, timestamp, showTail = true }: Cha
         <Text
           variant="caption"
           color="secondary"
-          style={[
-            styles.timestamp,
-            isUser ? styles.userTimestamp : styles.botTimestamp,
-          ]}
+          style={[styles.timestamp, isUser ? styles.userTimestamp : styles.botTimestamp]}
         >
           {timestamp}
         </Text>
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

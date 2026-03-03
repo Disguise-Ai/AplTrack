@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,15 +6,13 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
-  Dimensions,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/Colors';
-
-const { width } = Dimensions.get('window');
 
 interface AIModel {
   rank: number;
@@ -76,25 +74,29 @@ export default function LeaderboardScreen() {
   const [sortMetric, setSortMetric] = useState<SortMetric>('score');
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
-  };
+  }, []);
 
-  const sortedModels = [...AI_MODELS].sort((a, b) => b[sortMetric] - a[sortMetric]);
+  // Memoize sorted models - only recalculate when sort metric changes
+  const sortedModels = useMemo(() =>
+    [...AI_MODELS].sort((a, b) => b[sortMetric] - a[sortMetric]),
+    [sortMetric]
+  );
 
-  const formatMRR = (value: number): string => {
+  const formatMRR = useCallback((value: number): string => {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
     return `$${(value / 1000).toFixed(0)}K`;
-  };
+  }, []);
 
-  const getRankBadge = (rank: number) => {
+  const getRankBadge = useCallback((rank: number) => {
     if (rank === 1) return { bg: '#FFD700', text: '#000' };
     if (rank === 2) return { bg: '#C0C0C0', text: '#000' };
     if (rank === 3) return { bg: '#CD7F32', text: '#FFF' };
     return { bg: colors.card, text: colors.textSecondary };
-  };
+  }, [colors.card, colors.textSecondary]);
 
   const renderAILeaderboard = () => (
     <View>

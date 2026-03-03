@@ -59,7 +59,7 @@ export function useAuth() {
               profileLoadFailed = true;
             }
           }
-          // Don't wait for RevenueCat - do it in background (skip on macOS)
+          // Initialize RevenueCat for payments (skip on macOS)
           if (Platform.OS !== 'macos') {
             initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
           }
@@ -109,9 +109,9 @@ export function useAuth() {
             console.log('Profile load failed on auth change');
             profileLoadFailed = true;
           }
-        }
-        // Don't wait for RevenueCat
+        // Initialize RevenueCat for payments
         initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
+        }
       }
       setState((prev) => ({ ...prev, session, user: session?.user ?? null, profile, loading: false, initialized: true, profileLoadFailed }));
     });
@@ -144,7 +144,9 @@ export function useAuth() {
   const signOut = useCallback(async () => {
     console.log('signOut called - starting sign out process');
     setState((prev) => ({ ...prev, loading: true }));
-    try { await logOutRevenueCat(); } catch (error) { console.error('Error logging out of RevenueCat:', error); }
+
+    // Log out of RevenueCat
+    try { await logOutRevenueCat(); } catch (e) {}
 
     // Clear state BEFORE calling supabase signOut to prevent race conditions
     setState({ session: null, user: null, profile: null, loading: false, initialized: true, profileLoadFailed: false });

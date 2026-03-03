@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Colors } from '@/constants/Colors';
+import { LockedFeature } from '@/components/Paywall';
 
 interface AIModel {
   id: string;
@@ -230,62 +231,63 @@ export default function AIModelsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
 
-  const filterModels = (models: AIModel[]): AIModel[] => {
+  // Memoize filtered models - only recalculate when filter changes
+  const filteredModels = useMemo(() => {
     switch (filter) {
       case 'hot':
-        return models.filter(m => m.tags.includes('Hot') || m.tags.includes('New'));
+        return AI_MODELS.filter(m => m.tags.includes('Hot') || m.tags.includes('New'));
       case 'coding':
-        return models.filter(m => m.bestFor.some(b => b.toLowerCase().includes('cod')));
+        return AI_MODELS.filter(m => m.bestFor.some(b => b.toLowerCase().includes('cod')));
       case 'budget':
-        return models.filter(m => m.tags.includes('Best Value'));
+        return AI_MODELS.filter(m => m.tags.includes('Best Value'));
       case 'fast':
-        return models.filter(m => m.speed === 'Fast' || m.tags.includes('Fastest'));
+        return AI_MODELS.filter(m => m.speed === 'Fast' || m.tags.includes('Fastest'));
       case 'open-source':
-        return models.filter(m => m.tags.includes('Open Source'));
+        return AI_MODELS.filter(m => m.tags.includes('Open Source'));
       default:
-        return models;
+        return AI_MODELS;
     }
-  };
+  }, [filter]);
 
-  const filteredModels = filterModels(AI_MODELS);
-
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     // In production, this would fetch latest model data from an API
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
+  }, []);
+
+  // Pre-computed color maps for performance
+  const SPEED_COLORS: Record<string, string> = {
+    'Fast': '#10B981',
+    'Medium': '#F59E0B',
+    'Slow': '#EF4444',
   };
 
-  const getSpeedColor = (speed: string) => {
-    switch (speed) {
-      case 'Fast': return '#10B981';
-      case 'Medium': return '#F59E0B';
-      case 'Slow': return '#EF4444';
-      default: return colors.textSecondary;
-    }
+  const TAG_COLORS: Record<string, string> = {
+    'Hot': '#EF4444',
+    'New': '#8B5CF6',
+    'Best Value': '#10B981',
+    'Most Capable': '#F59E0B',
+    'Fastest': '#3B82F6',
+    'Open Source': '#6366F1',
   };
 
-  const getTagColor = (tag: string) => {
-    switch (tag) {
-      case 'Hot': return '#EF4444';
-      case 'New': return '#8B5CF6';
-      case 'Best Value': return '#10B981';
-      case 'Most Capable': return '#F59E0B';
-      case 'Fastest': return '#3B82F6';
-      case 'Open Source': return '#6366F1';
-      default: return colors.textSecondary;
-    }
-  };
+  const getSpeedColor = useCallback((speed: string) =>
+    SPEED_COLORS[speed] || colors.textSecondary, [colors.textSecondary]);
+
+  const getTagColor = useCallback((tag: string) =>
+    TAG_COLORS[tag] || colors.textSecondary, [colors.textSecondary]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text variant="title" weight="bold">AI Models</Text>
-        <Text variant="caption" color="secondary" style={{ marginTop: 4 }}>
-          Live pricing & capabilities
-        </Text>
-      </View>
+    <LockedFeature feature="community" featureTitle="AI Models">
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text variant="title" weight="bold">AI Models</Text>
+          <Text variant="caption" color="secondary" style={{ marginTop: 4 }}>
+            Live pricing & capabilities
+          </Text>
+        </View>
 
       {/* Filter Pills */}
       <ScrollView
@@ -472,8 +474,9 @@ export default function AIModelsScreen() {
         </View>
 
         <View style={{ height: 32 }} />
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </LockedFeature>
   );
 }
 

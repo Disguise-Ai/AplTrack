@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Alert, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +30,7 @@ export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { user, profile, refreshProfile } = useAuth();
-  const { analytics, stats, syncing, syncAnalytics, apps, error: syncError } = useAnalytics();
+  const { analytics, stats, syncing, syncAnalytics, loadMetrics, apps, error: syncError } = useAnalytics();
   const { refresh: refreshSubscription } = useSubscription();
   const [connectedSources, setConnectedSources] = useState<ConnectedApp[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -41,23 +41,27 @@ export default function DashboardScreen() {
   const hasConnectedSources = connectedSources.length > 0 || apps.length > 0;
   const isLive = hasConnectedSources;
 
-  // Build chart data for last 28 days, filling in zeros for missing days
-  const chartData: number[] = [];
-  const chartLabels: string[] = [];
-  const analyticsMap = new Map(analytics.map(a => [a.date, a]));
+  // Memoize chart data computation - only recalculate when analytics changes
+  const { chartData, chartLabels } = useMemo(() => {
+    const data: number[] = [];
+    const labels: string[] = [];
+    const analyticsMap = new Map(analytics.map(a => [a.date, a]));
 
-  for (let i = 27; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayData = analyticsMap.get(dateStr);
+    for (let i = 27; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayData = analyticsMap.get(dateStr);
 
-    chartData.push(dayData?.downloads || 0);
-    chartLabels.push(`${date.getMonth() + 1}/${date.getDate()}`);
-  }
+      data.push(dayData?.downloads || 0);
+      labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+    }
+    return { chartData: data, chartLabels: labels };
+  }, [analytics]);
 
-  const formatCurrency = (value: number): string =>
-    `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Memoize currency formatter
+  const formatCurrency = useCallback((value: number): string =>
+    `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, []);
 
   useEffect(() => {
     if (user) {
@@ -70,11 +74,14 @@ export default function DashboardScreen() {
     useCallback(() => {
       if (user) {
         console.log('[Dashboard] Screen focused, refreshing data');
-        refreshProfile(); // Refresh profile to get updated app name, company name, etc.
+        refreshProfile();
         loadConnectedSources();
+        // Load metrics immediately from database (fast)
+        loadMetrics();
+        // Then sync from RevenueCat in background (slow)
         syncAnalytics();
       }
-    }, [user])
+    }, [user, loadMetrics, syncAnalytics])
   );
 
   // Auto-refresh on sign-in (when coming from verify-code screen)
@@ -101,24 +108,48 @@ export default function DashboardScreen() {
     }
   }, [user, params.refresh]);
 
-  // Auto-refresh every 2 minutes for real-time data
+  // Auto-refresh every 2 minutes for real-time data (pauses when app backgrounded)
   useEffect(() => {
     if (!user || !hasConnectedSources) return;
 
-    const refreshData = () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const refreshData = async () => {
       console.log('[Dashboard] Auto-refresh triggered');
-      // Don't await - let it run in background
-      syncAllDataSources(user.id)
-        .then(() => syncAnalytics())
-        .then(() => setLastSyncTime(new Date()))
-        .catch(() => {});
+      await syncAnalytics();
+      setLastSyncTime(new Date());
     };
 
-    // Refresh every 2 minutes (120000ms) for real-time updates
-    const interval = setInterval(refreshData, 120000);
+    const startInterval = () => {
+      if (!interval) {
+        interval = setInterval(refreshData, 120000);
+      }
+    };
 
-    return () => clearInterval(interval);
-  }, [user, hasConnectedSources]);
+    const stopInterval = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    // Start interval initially
+    startInterval();
+
+    // Listen for app state changes to pause/resume
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        startInterval();
+      } else {
+        stopInterval();
+      }
+    });
+
+    return () => {
+      stopInterval();
+      subscription.remove();
+    };
+  }, [user, hasConnectedSources, syncAnalytics]);
 
   const loadConnectedSources = async () => {
     if (!user) return;
@@ -132,42 +163,29 @@ export default function DashboardScreen() {
 
   const handleSync = async () => {
     setRefreshing(true);
-
-    // Force stop refreshing after 3 seconds no matter what
-    const forceStopTimeout = setTimeout(() => {
-      console.log('[Dashboard] Force stopping refresh');
-      setRefreshing(false);
-    }, 3000);
+    console.log('[Dashboard] Pull to refresh - syncing...');
 
     try {
       if (user) {
-        // Load existing data from database FIRST (fast)
+        // syncAnalytics now: 1) calls edge function 2) reloads from database
         await syncAnalytics();
-        console.log('[Dashboard] Data loaded');
-        setRefreshing(false);
-        clearTimeout(forceStopTimeout);
-
-        // Then sync from RevenueCat in background (slow, don't wait)
-        syncAllDataSources(user.id).then(() => {
-          console.log('[Dashboard] Background sync complete');
-          syncAnalytics(); // Reload after sync
-          setLastSyncTime(new Date());
-        }).catch(() => {});
+        console.log('[Dashboard] Sync complete');
+        setLastSyncTime(new Date());
       }
     } catch (error: any) {
       console.log('[Dashboard] Error:', error.message);
     } finally {
-      clearTimeout(forceStopTimeout);
       setRefreshing(false);
     }
   };
 
-  const getGreeting = () => {
+  // Memoize greeting - only changes when hour changes
+  const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
-  };
+  }, []);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -184,7 +202,7 @@ export default function DashboardScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
-            <Text variant="caption" color="secondary">{getGreeting()}</Text>
+            <Text variant="caption" color="secondary">{greeting}</Text>
             <View style={styles.appNameRow}>
               <Text variant="title" weight="bold">{profile?.app_name || 'Dashboard'}</Text>
               <Ionicons name="pencil" size={14} color={colors.textSecondary} style={{ marginLeft: 8 }} />
@@ -271,13 +289,13 @@ export default function DashboardScreen() {
           <StatCard
             title="Downloads Today"
             value={stats.downloadsToday}
-            subtitle="new customers"
+            subtitle="resets midnight EST"
             icon="download-outline"
           />
           <StatCard
             title="Revenue Today"
             value={formatCurrency(stats.revenueToday)}
-            subtitle="today"
+            subtitle="resets midnight EST"
             icon="cash-outline"
           />
         </View>

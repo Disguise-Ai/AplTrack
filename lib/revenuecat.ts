@@ -6,9 +6,8 @@ import Constants from 'expo-constants';
 let isConfigured = false;
 let isDisabled = false;
 
-// Disable RevenueCat until products are configured in RevenueCat dashboard
-// Set to true once you've created products at https://app.revenuecat.com
-const REVENUECAT_ENABLED = false;
+// Enable RevenueCat for subscription purchases
+const REVENUECAT_ENABLED = true;
 
 export async function initializeRevenueCat(userId?: string): Promise<void> {
   if (!REVENUECAT_ENABLED || isConfigured || isDisabled) return;
@@ -27,12 +26,12 @@ export async function initializeRevenueCat(userId?: string): Promise<void> {
   }
 
   try {
-    // Suppress verbose logs in production - only show warnings
-    Purchases.setLogLevel(LOG_LEVEL.WARN);
+    // Suppress all logs except errors - hides "no products" warning during development
+    Purchases.setLogLevel(LOG_LEVEL.ERROR);
     await Purchases.configure({ apiKey, appUserID: userId });
     isConfigured = true;
   } catch (error) {
-    console.log('RevenueCat init skipped - products not configured yet');
+    // Silently handle - products may not be configured yet
     isDisabled = true;
   }
 }

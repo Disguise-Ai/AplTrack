@@ -7,7 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
-import { configureSuperwall } from '@/lib/superwall';
+import { syncAllDataSources } from '@/lib/api';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -16,8 +16,16 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    // Initialize Superwall
-    configureSuperwall();
+    // Trigger background sync on app startup for any authenticated user
+    const triggerBackgroundSync = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        console.log('[App] Triggering background sync on startup');
+        // Don't await - let it run in background
+        syncAllDataSources(session.user.id).catch(() => {});
+      }
+    };
+    triggerBackgroundSync();
 
     // Handle deep links for auth
     const handleDeepLink = async (url: string) => {

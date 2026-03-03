@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, useColorScheme, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, StyleSheet, useColorScheme, TouchableOpacity, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './ui/Text';
 import { Colors } from '@/constants/Colors';
@@ -12,9 +12,9 @@ interface TrialCountdownProps {
 export function TrialCountdown({ trialEndsAt, onUpgrade }: TrialCountdownProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
-  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
 
-  function calculateTimeLeft() {
+  // Use useCallback for stable calculateTimeLeft reference
+  const calculateTimeLeft = useCallback(() => {
     const endTime = new Date(trialEndsAt).getTime();
     const now = Date.now();
     const diff = endTime - now;
@@ -28,15 +28,48 @@ export function TrialCountdown({ trialEndsAt, onUpgrade }: TrialCountdownProps) 
     const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
     return { hours, minutes, seconds, expired: false };
-  }
+  }, [trialEndsAt]);
+
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(calculateTimeLeft());
-    }, 1000);
+    // Recalculate immediately when trialEndsAt changes
+    setTimeLeft(calculateTimeLeft());
 
-    return () => clearInterval(timer);
-  }, [trialEndsAt]);
+    const startTimer = () => {
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => {
+          setTimeLeft(calculateTimeLeft());
+        }, 1000);
+      }
+    };
+
+    const stopTimer = () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+
+    // Start timer
+    startTimer();
+
+    // Pause when app goes to background to save battery
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        setTimeLeft(calculateTimeLeft()); // Recalculate immediately
+        startTimer();
+      } else {
+        stopTimer();
+      }
+    });
+
+    return () => {
+      stopTimer();
+      subscription.remove();
+    };
+  }, [trialEndsAt, calculateTimeLeft]);
 
   if (timeLeft.expired) {
     return (

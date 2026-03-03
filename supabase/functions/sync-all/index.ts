@@ -94,44 +94,64 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
   const yesterdayStr = getESTYesterday();
   console.log(`[RC] Yesterday (EST): ${yesterdayStr}`);
 
-  // ALWAYS calculate downloads_today from yesterday's final value
-  // Look across ALL apps for this user (in case app was reconnected with new ID)
+  // Get yesterday's cumulative customer count to calculate today's new customers
   let customerBaseline = 0;
   let foundYesterdayData = false;
 
-  // Find yesterday's new_customers count - search ALL RevenueCat metrics from yesterday
-  const customerMetricTypes = ["new_customers_28d", "downloads_cumulative", "active_users", "active_users_current"];
-  for (const metricType of customerMetricTypes) {
-    // Search ALL revenuecat metrics from yesterday (regardless of app_id)
-    // This handles cases where user reconnected with a new app ID
-    const { data } = await supabase
+  // First, check for yesterday's cumulative total (downloads_cumulative stores the running total)
+  const { data: yesterdayCumulative } = await supabase
+    .from("realtime_metrics")
+    .select("metric_value")
+    .eq("app_id", app.id)
+    .eq("provider", "revenuecat")
+    .eq("metric_type", "downloads_cumulative")
+    .eq("metric_date", yesterdayStr)
+    .single();
+
+  if (yesterdayCumulative?.metric_value !== undefined) {
+    customerBaseline = yesterdayCumulative.metric_value;
+    foundYesterdayData = true;
+    console.log(`[RC] Yesterday's cumulative customers: ${customerBaseline}`);
+  }
+
+  // If no cumulative data, look for the most recent cumulative value
+  if (!foundYesterdayData) {
+    const { data: recentCumulative } = await supabase
       .from("realtime_metrics")
-      .select("metric_value")
+      .select("metric_value, metric_date")
+      .eq("app_id", app.id)
       .eq("provider", "revenuecat")
-      .eq("metric_type", metricType)
-      .eq("metric_date", yesterdayStr)
-      .order("metric_value", { ascending: false })
+      .eq("metric_type", "downloads_cumulative")
+      .order("metric_date", { ascending: false })
       .limit(1)
       .single();
 
-    if (data?.metric_value !== undefined && data.metric_value !== null) {
-      customerBaseline = data.metric_value;
+    if (recentCumulative?.metric_value !== undefined) {
+      customerBaseline = recentCumulative.metric_value;
       foundYesterdayData = true;
-      console.log(`[RC] Yesterday's customers from ${metricType}: ${customerBaseline}`);
-      break;
+      console.log(`[RC] Most recent cumulative (${recentCumulative.metric_date}): ${customerBaseline}`);
     }
   }
 
-  // If no yesterday data, this is first sync ever - use current value as baseline
+  // If still no baseline, this is first sync - use 0 as baseline so we show all current customers as "today"
   if (!foundYesterdayData) {
-    // First time setup - show at least 1 download if there are any customers
-    customerBaseline = newCustomers > 0 ? newCustomers - 1 : 0;
-    console.log(`[RC] First time setup - baseline: ${customerBaseline}`);
+    customerBaseline = 0;
+    console.log(`[RC] First time setup - baseline: 0, showing all ${newCustomers} as today's downloads`);
   }
 
-  // Calculate downloads today = current - yesterday's end value
-  const downloadsToday = Math.max(0, newCustomers - customerBaseline);
-  console.log(`[RC] Downloads today: ${downloadsToday} (${newCustomers} current - ${customerBaseline} baseline)`);
+  // Calculate downloads today = current cumulative - previous cumulative
+  // Note: newCustomers from RC is 28-day rolling, so we use it as a proxy for cumulative growth
+  let downloadsToday = Math.max(0, newCustomers - customerBaseline);
+
+  // Sanity check: if downloads is unrealistically high (>100 in a day), cap it
+  // This handles edge cases like first sync or data resets
+  if (downloadsToday > 100 && !foundYesterdayData) {
+    // First sync - just show a reasonable starting value based on active subs
+    downloadsToday = Math.min(activeSubs, 10); // Cap at 10 for first day
+    console.log(`[RC] First sync - capping downloads to ${downloadsToday}`);
+  }
+
+  console.log(`[RC] Calculated downloads today: ${downloadsToday} (${newCustomers} current - ${customerBaseline} baseline)`);
 
   // Same for revenue - search across all apps
   let revenueBaseline = 0;
@@ -187,21 +207,32 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
     { app_id: app.id, provider: "revenuecat", metric_type: "downloads_cumulative", metric_value: newCustomers, metric_date: today },
   );
 
-  console.log(`[RC] TODAY's FINAL stats: downloads_today=${downloadsToday}, revenue_today=$${revenueToday}, total_customers=${newCustomers}`);
+  // This log is now before Charts API override - see FINAL log after Charts API
+  console.log(`[RC] Pre-Charts stats: downloads_today=${downloadsToday}, revenue_today=$${revenueToday}, total_customers=${newCustomers}`);
 
   // Fetch REAL daily breakdown from RevenueCat Charts API for last 7 days
   const startDate = getESTDaysAgo(6);
   console.log(`[RC] Fetching charts from ${startDate} to ${today} (EST)`);
   let chartsApiStatus = "not_called";
   let chartsApiResponse = "";
+  let chartsTodayValue: number | null = null; // Store today's value from Charts API
 
   try {
     // Get daily new_customers breakdown using Charts API
-    // Use 'customers_new' chart with realtime=false (required for non-realtime projects)
-    const chartResp = await fetch(
-      `https://api.revenuecat.com/v2/projects/${projectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=false`,
+    // Try realtime=true first to get today's value, fall back to realtime=false
+    let chartResp = await fetch(
+      `https://api.revenuecat.com/v2/projects/${projectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=true`,
       { headers: { "Authorization": `Bearer ${apiKey}` } }
     );
+
+    // If realtime=true fails, try realtime=false
+    if (!chartResp.ok) {
+      console.log(`[RC] Charts API realtime=true failed (${chartResp.status}), trying realtime=false`);
+      chartResp = await fetch(
+        `https://api.revenuecat.com/v2/projects/${projectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=false`,
+        { headers: { "Authorization": `Bearer ${apiKey}` } }
+      );
+    }
 
     chartsApiStatus = `${chartResp.status}`;
     const chartText = await chartResp.text();
@@ -231,8 +262,13 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
 
             console.log(`[RC] Parsed: timestamp=${timestamp} -> date=${pointDate}, value=${pointValue}`);
 
-            // Only use Charts API for HISTORICAL days (not today)
-            // Today's value should come from our real-time calculation
+            // Store ALL days including today from Charts API - it's the REAL data!
+            if (pointDate === today) {
+              chartsTodayValue = pointValue;
+              console.log(`[RC] Charts API has TODAY's value: ${pointValue} downloads`);
+            }
+
+            // Store historical data
             if (pointDate !== today) {
               metricsToInsert.push({
                 app_id: app.id,
@@ -242,8 +278,6 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
                 metric_date: pointDate,
               });
               console.log(`[RC] Historical daily data: ${pointDate} = ${pointValue} downloads`);
-            } else {
-              console.log(`[RC] Skipping Charts API value for today (${pointValue}), using real-time calculation (${downloadsToday}) instead`);
             }
           }
         }
@@ -282,6 +316,24 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
   } catch (chartError) {
     console.log(`[RC] Charts API error:`, chartError);
   }
+
+  // Use Charts API value for today if available (it's the REAL value!)
+  if (chartsTodayValue !== null) {
+    downloadsToday = chartsTodayValue;
+    console.log(`[RC] Using Charts API value for today: ${downloadsToday} downloads`);
+  } else {
+    console.log(`[RC] Charts API didn't have today's value, using calculated: ${downloadsToday} downloads`);
+  }
+
+  // Update the downloads_today metric in our insert array with the final value
+  const downloadsTodayIndex = metricsToInsert.findIndex(
+    m => m.metric_type === "downloads_today" && m.metric_date === today
+  );
+  if (downloadsTodayIndex >= 0) {
+    metricsToInsert[downloadsTodayIndex].metric_value = downloadsToday;
+  }
+
+  console.log(`[RC] FINAL downloads_today: ${downloadsToday}`);
 
   // Remove duplicates before upserting (keep the last value for each key)
   const metricsMap = new Map<string, any>();

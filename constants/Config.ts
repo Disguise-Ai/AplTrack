@@ -10,7 +10,7 @@ export const Config = {
   REVENUECAT_API_KEY_ANDROID: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID || 'your-android-api-key',
   PREMIUM_MONTHLY_PRODUCT_ID: 'com.apltrack.premium.monthly',
   PREMIUM_ENTITLEMENT_ID: 'premium',
-  SUBSCRIPTION_PRICE: '$30/month',
+  SUBSCRIPTION_PRICE: '$30',
   APP_CATEGORIES: ['Games', 'Productivity', 'Social', 'Health & Fitness', 'Finance', 'Education', 'Entertainment', 'Other'],
   TEAM_SIZES: [
     { label: 'Solo', value: 'solo' },

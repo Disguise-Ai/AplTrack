@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -23,36 +23,53 @@ import { Colors } from '@/constants/Colors';
 
 type BotType = 'marketing' | 'sales';
 
-function TypingIndicator() {
+const TypingIndicator = React.memo(function TypingIndicator() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
-  const [dot1] = useState(new Animated.Value(0));
-  const [dot2] = useState(new Animated.Value(0));
-  const [dot3] = useState(new Animated.Value(0));
+
+  // Use useRef for animation values to avoid re-creating on each render
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+  const animationsRef = useRef<Animated.CompositeAnimation[]>([]);
 
   useEffect(() => {
     const animate = (dot: Animated.Value, delay: number) => {
-      Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
           Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
           Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      animationsRef.current.push(animation);
+      animation.start();
     };
+
     animate(dot1, 0);
     animate(dot2, 150);
     animate(dot3, 300);
-  }, []);
 
-  const dotStyle = (anim: Animated.Value) => ({
+    // Cleanup: stop all animations on unmount
+    return () => {
+      animationsRef.current.forEach(anim => anim.stop());
+      animationsRef.current = [];
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    };
+  }, [dot1, dot2, dot3]);
+
+  const dotStyle = useCallback((anim: Animated.Value) => ({
     opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
     transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) }],
-  });
+  }), []);
+
+  const dots = useMemo(() => [dot1, dot2, dot3], [dot1, dot2, dot3]);
 
   return (
     <View style={[styles.typingBubble, { backgroundColor: colors.card }]}>
-      {[dot1, dot2, dot3].map((dot, i) => (
+      {dots.map((dot, i) => (
         <Animated.View
           key={i}
           style={[styles.typingDot, { backgroundColor: colors.textSecondary }, dotStyle(dot)]}
@@ -60,7 +77,7 @@ function TypingIndicator() {
       ))}
     </View>
   );
-}
+});
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -73,11 +90,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    loadChatHistory();
-  }, [activeBot, user]);
-
-  const loadChatHistory = async () => {
+  const loadChatHistory = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -88,9 +101,13 @@ export default function ChatScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, activeBot]);
 
-  const handleSend = async () => {
+  useEffect(() => {
+    loadChatHistory();
+  }, [loadChatHistory]);
+
+  const handleSend = useCallback(async () => {
     if (!inputText.trim() || !user || sending) return;
     const userMessage = inputText.trim();
     setInputText('');
@@ -124,10 +141,10 @@ export default function ChatScreen() {
     } finally {
       setSending(false);
     }
-  };
+  }, [inputText, user, sending, activeBot, profile?.app_name, profile?.app_category]);
 
-  const formatTime = (dateStr: string): string =>
-    new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formatTime = useCallback((dateStr: string): string =>
+    new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), []);
 
   const botInfo = {
     marketing: {

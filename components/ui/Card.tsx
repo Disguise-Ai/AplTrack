@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, ViewStyle, useColorScheme, TouchableOpacity } from 'react-native';
 import { Colors } from '@/constants/Colors';
 
@@ -10,20 +10,22 @@ interface CardProps {
   variant?: 'default' | 'elevated' | 'outlined';
 }
 
-export function Card({ children, style, onPress, padding = 16, variant = 'default' }: CardProps) {
+export const Card = React.memo(function Card({ children, style, onPress, padding = 16, variant = 'default' }: CardProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
-  const getCardStyle = (): ViewStyle => {
+  // Memoize card style computation
+  const cardStyle = useMemo((): ViewStyle => {
     const base: ViewStyle = {
       backgroundColor: colors.card,
       borderRadius: 12,
       padding,
     };
 
+    let variantStyle: ViewStyle;
     switch (variant) {
       case 'elevated':
-        return {
+        variantStyle = {
           ...base,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
@@ -31,26 +33,25 @@ export function Card({ children, style, onPress, padding = 16, variant = 'defaul
           shadowRadius: 12,
           elevation: 8,
         };
+        break;
       case 'outlined':
-        return {
+        variantStyle = {
           ...base,
           backgroundColor: 'transparent',
           borderWidth: 1,
           borderColor: colors.border,
         };
+        break;
       default:
-        return {
+        variantStyle = {
           ...base,
           borderWidth: 1,
           borderColor: colors.border,
         };
     }
-  };
 
-  const cardStyle: ViewStyle = {
-    ...getCardStyle(),
-    ...StyleSheet.flatten(style),
-  };
+    return { ...variantStyle, ...StyleSheet.flatten(style) };
+  }, [colors.card, colors.border, colorScheme, padding, variant, style]);
 
   if (onPress) {
     return (
@@ -61,4 +62,4 @@ export function Card({ children, style, onPress, padding = 16, variant = 'defaul
   }
 
   return <View style={cardStyle}>{children}</View>;
-}
+});

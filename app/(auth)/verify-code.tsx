@@ -13,6 +13,10 @@ const INPUT_ACCESSORY_ID = 'verifyCodeInput';
 
 const CODE_LENGTH = 6;
 
+// Apple Review Demo Account
+const DEMO_EMAIL = 'shaad@dontpanic.digital';
+const DEMO_CODE = 'review123';
+
 export default function VerifyCodeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ email: string; fullName: string }>();
@@ -42,8 +46,11 @@ export default function VerifyCodeScreen() {
   }, [resendCooldown]);
 
   // Auto-verify when code is complete (with small delay for paste)
+  const isDemoAccount = email.toLowerCase() === DEMO_EMAIL.toLowerCase();
+  const expectedCodeLength = isDemoAccount ? DEMO_CODE.length : CODE_LENGTH;
+
   useEffect(() => {
-    if (code.length === CODE_LENGTH && !verifying) {
+    if (code.length === expectedCodeLength && !verifying) {
       // Small delay to allow UI to update before verifying
       const timer = setTimeout(() => {
         console.log('Auto-verifying code...');
@@ -63,10 +70,40 @@ export default function VerifyCodeScreen() {
   };
 
   const handleVerify = async () => {
-    if (code.length !== CODE_LENGTH || verifying) return;
+    const isDemo = email.toLowerCase() === DEMO_EMAIL.toLowerCase();
+    const requiredLength = isDemo ? DEMO_CODE.length : CODE_LENGTH;
+
+    if (code.length !== requiredLength || verifying) return;
 
     setVerifying(true);
     try {
+      // Apple Review Demo Account - bypass OTP verification
+      if (isDemo && code === DEMO_CODE) {
+        console.log('Demo account detected - bypassing OTP verification');
+        // Try to sign in with password (requires demo user to be set up in Supabase with password auth)
+        const { data: passwordData, error: passwordError } = await supabase.auth.signInWithPassword({
+          email: DEMO_EMAIL,
+          password: DEMO_CODE,
+        });
+
+        if (passwordError) {
+          console.log('Password auth failed, trying to create session anyway:', passwordError.message);
+          // If password auth fails, navigate to dashboard anyway (demo mode)
+          router.replace('/(tabs)/dashboard?demo=true');
+          return;
+        }
+
+        if (passwordData?.session) {
+          console.log('Demo user signed in successfully');
+          router.replace('/(tabs)/dashboard?refresh=true');
+          return;
+        }
+
+        // Fallback: navigate to dashboard
+        router.replace('/(tabs)/dashboard?demo=true');
+        return;
+      }
+
       console.log('Starting OTP verification for:', email);
 
       // Try verifying with 'email' type first, then 'signup' as fallback
@@ -192,16 +229,21 @@ export default function VerifyCodeScreen() {
   };
 
   const handleCodeChange = (text: string) => {
-    // Only allow numbers - handle both typing and paste
-    const cleaned = text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
-    console.log('Code changed:', cleaned.length, 'digits');
+    // Allow alphanumeric for demo account, otherwise numbers only
+    const isDemoAccount = email.toLowerCase() === DEMO_EMAIL.toLowerCase();
+    const maxLength = isDemoAccount ? DEMO_CODE.length : CODE_LENGTH;
+    const cleaned = isDemoAccount
+      ? text.slice(0, maxLength)
+      : text.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH);
+    console.log('Code changed:', cleaned.length, 'characters');
     setCode(cleaned);
   };
 
   // Render code boxes
   const renderCodeBoxes = () => {
     const boxes = [];
-    for (let i = 0; i < CODE_LENGTH; i++) {
+    const boxCount = isDemoAccount ? DEMO_CODE.length : CODE_LENGTH;
+    for (let i = 0; i < boxCount; i++) {
       const isFilled = i < code.length;
       const isActive = i === code.length;
       boxes.push(
@@ -241,7 +283,7 @@ export default function VerifyCodeScreen() {
         </Text>
 
         <Text variant="body" color="secondary" align="center" style={styles.subtitle}>
-          We sent a 6-digit code to
+          {isDemoAccount ? 'Enter your review code' : 'We sent a 6-digit code to'}
         </Text>
 
         <View style={[styles.emailBadge, { backgroundColor: colors.surface }]}>
@@ -257,9 +299,10 @@ export default function VerifyCodeScreen() {
           style={styles.hiddenInput}
           value={code}
           onChangeText={handleCodeChange}
-          keyboardType="number-pad"
-          maxLength={CODE_LENGTH}
+          keyboardType={isDemoAccount ? "default" : "number-pad"}
+          maxLength={expectedCodeLength}
           autoFocus
+          autoCapitalize="none"
           inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
         />
 
@@ -271,13 +314,13 @@ export default function VerifyCodeScreen() {
                 style={styles.doneButton}
                 onPress={() => {
                   Keyboard.dismiss();
-                  if (code.length === CODE_LENGTH) {
+                  if (code.length === expectedCodeLength) {
                     handleVerify();
                   }
                 }}
               >
                 <Text variant="label" weight="semibold" style={{ color: colors.primary }}>
-                  {code.length === CODE_LENGTH ? 'Verify' : 'Done'}
+                  {code.length === expectedCodeLength ? 'Verify' : 'Done'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -319,11 +362,11 @@ export default function VerifyCodeScreen() {
           title={verifying ? "Verifying..." : "Continue"}
           onPress={handleVerify}
           loading={verifying}
-          disabled={code.length !== CODE_LENGTH}
+          disabled={code.length !== expectedCodeLength}
           size="large"
           style={styles.button}
         />
-        {code.length === CODE_LENGTH && !verifying && (
+        {code.length === expectedCodeLength && !verifying && (
           <Text variant="caption" color="secondary" align="center" style={{ marginTop: 8 }}>
             Tap Continue or wait for auto-verify
           </Text>

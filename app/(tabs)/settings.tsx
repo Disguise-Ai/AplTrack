@@ -7,8 +7,10 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TrialCountdown } from '@/components/TrialCountdown';
+import { Paywall } from '@/components/Paywall';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
+import { supabase } from '@/lib/supabase';
 import { Config } from '@/constants/Config';
 import { Colors } from '@/constants/Colors';
 
@@ -17,7 +19,7 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { user, profile, signOut, updateProfile, refreshProfile } = useAuth();
-  const { isPremium, isTrial, trialEndsAt, monthlyPackage, purchase, restore, purchasing, beginTrial } = useSubscription();
+  const { isPremium, isTrial, trialEndsAt, subscribe, restore, purchasing, beginTrial, monthlyPackage } = useSubscription();
 
   // Refresh profile data when screen mounts
   useEffect(() => {
@@ -90,27 +92,34 @@ export default function SettingsScreen() {
   };
 
   const handlePurchase = async () => {
-    if (!monthlyPackage) {
-      Alert.alert('Error', 'Subscription not available. Please try again later.');
-      return;
-    }
     try {
-      await purchase(monthlyPackage);
+      await subscribe();
       setShowPaywall(false);
       Alert.alert('Success', 'Welcome to Statly Premium!');
     } catch (error: any) {
+      // Don't show error if user just cancelled
       if (error.message !== 'Purchase cancelled') {
-        Alert.alert('Error', error.message || 'Purchase failed. Please try again.');
+        Alert.alert('Error', error.message || 'Subscribe failed. Please try again.');
       }
+    }
+  };
+
+  const handleStartTrial = async () => {
+    try {
+      setShowPaywall(false);
+      await beginTrial();
+      Alert.alert('Trial Started!', 'Your 72-hour free trial has begun. Enjoy full access to all features!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to start trial.');
     }
   };
 
   const handleRestore = async () => {
     try {
       await restore();
-      Alert.alert('Success', 'Purchases restored successfully!');
+      Alert.alert('Success', 'Subscription restored successfully!');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to restore purchases.');
+      Alert.alert('Info', 'No active subscription found.');
     }
   };
 
@@ -172,22 +181,30 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.subscriptionInfo}>
                 <Text variant="label" weight="semibold">Upgrade to Premium</Text>
-                <Text variant="caption" color="secondary">Unlock all features for {Config.SUBSCRIPTION_PRICE}</Text>
+                <Text variant="caption" color="secondary">Unlock all features for {Config.SUBSCRIPTION_PRICE}/month</Text>
               </View>
             </View>
-            <Button
-              title="Start Free Trial"
-              onPress={async () => {
-                try {
-                  await beginTrial();
-                  Alert.alert('Trial Started', 'Your 72-hour free trial has begun!');
-                } catch (e: any) {
-                  Alert.alert('Error', e.message || 'Failed to start trial');
-                }
-              }}
-              size="small"
-              style={styles.upgradeButton}
-            />
+            <View style={styles.subscriptionButtons}>
+              <Button
+                title="Start 72-Hour Trial"
+                onPress={async () => {
+                  try {
+                    await beginTrial();
+                    Alert.alert('Trial Started', 'Your 72-hour free trial has begun!');
+                  } catch (e: any) {
+                    Alert.alert('Error', e.message || 'Failed to start trial');
+                  }
+                }}
+                size="small"
+                style={styles.trialButton}
+              />
+              <TouchableOpacity
+                style={styles.skipTrialButton}
+                onPress={() => setShowPaywall(true)}
+              >
+                <Text variant="caption" color="accent">Skip Trial & Subscribe</Text>
+              </TouchableOpacity>
+            </View>
           </Card>
         )}
 
@@ -323,47 +340,16 @@ export default function SettingsScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Paywall Modal */}
-      <Modal visible={showPaywall} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPaywall(false)}>
-        <SafeAreaView style={[styles.paywallContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.paywallHeader}>
-            <TouchableOpacity onPress={() => setShowPaywall(false)}>
-              <Ionicons name="close" size={28} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={styles.paywallContent}>
-            <View style={[styles.paywallIcon, { backgroundColor: colors.primary }]}>
-              <Ionicons name="diamond" size={48} color="#FFFFFF" />
-            </View>
-            <Text variant="title" weight="bold" align="center" style={styles.paywallTitle}>Statly Premium</Text>
-            <Text variant="body" color="secondary" align="center" style={styles.paywallSubtitle}>Unlock the full power of app analytics</Text>
-            <View style={styles.features}>
-              <PaywallFeature icon="sync-outline" title="Real-time Analytics Sync" description="Get live updates from App Store Connect" />
-              <PaywallFeature icon="chatbubbles-outline" title="Unlimited AI Chat" description="Marketing and sales advice on demand" />
-              <PaywallFeature icon="trophy-outline" title="Leaderboard Access" description="See top MRR apps and AI models" />
-              <PaywallFeature icon="notifications-outline" title="Push Notifications" description="Instant alerts for downloads and revenue" />
-            </View>
-            <View style={styles.priceContainer}>
-              <Text variant="title" weight="bold">{Config.SUBSCRIPTION_PRICE}</Text>
-              <Text variant="caption" color="secondary">Cancel anytime</Text>
-            </View>
-            <Button
-              title={purchasing ? 'Processing...' : 'Subscribe Now'}
-              onPress={handlePurchase}
-              loading={purchasing}
-              disabled={!monthlyPackage || purchasing}
-              size="large"
-              style={styles.subscribeButton}
-            />
-            <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}>
-              <Text variant="label" color="secondary">Restore Purchases</Text>
-            </TouchableOpacity>
-            <Text variant="caption" color="secondary" align="center" style={styles.disclaimer}>
-              Payment will be charged to your Apple ID account. Subscription automatically renews unless canceled at least 24 hours before the end of the current period.
-            </Text>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+      {/* Paywall */}
+      <Paywall
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onPurchase={handlePurchase}
+        onStartTrial={handleStartTrial}
+        onRestore={handleRestore}
+        purchasing={purchasing}
+        monthlyPrice={Config.SUBSCRIPTION_PRICE}
+      />
     </SafeAreaView>
   );
 }
@@ -377,22 +363,6 @@ function SettingsItem({ icon, label, onPress, external = false }: { icon: keyof 
       <Text variant="body" style={styles.settingsLabel}>{label}</Text>
       <Ionicons name={external ? 'open-outline' : 'chevron-forward'} size={20} color={colors.textSecondary} />
     </TouchableOpacity>
-  );
-}
-
-function PaywallFeature({ icon, title, description }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  return (
-    <View style={styles.featureItem}>
-      <View style={[styles.featureIcon, { backgroundColor: colors.primary + '15' }]}>
-        <Ionicons name={icon} size={24} color={colors.primary} />
-      </View>
-      <View style={styles.featureText}>
-        <Text variant="label" weight="semibold">{title}</Text>
-        <Text variant="caption" color="secondary">{description}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -410,6 +380,9 @@ const styles = StyleSheet.create({
   subscriptionContent: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   crownIcon: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   subscriptionInfo: { flex: 1 },
+  subscriptionButtons: { gap: 8 },
+  trialButton: { alignSelf: 'stretch' },
+  skipTrialButton: { alignSelf: 'center', paddingVertical: 8 },
   upgradeButton: { alignSelf: 'stretch' },
   section: { marginBottom: 24 },
   sectionTitle: { marginBottom: 8, marginLeft: 4 },
@@ -434,19 +407,4 @@ const styles = StyleSheet.create({
   editNameContent: { padding: 24, paddingBottom: 40 },
   editNameLabel: { marginBottom: 8 },
   nameInput: { fontSize: 17, padding: 16, borderRadius: 12, borderWidth: 1 },
-  // Paywall
-  paywallContainer: { flex: 1 },
-  paywallHeader: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16 },
-  paywallContent: { padding: 24, alignItems: 'center' },
-  paywallIcon: { width: 96, height: 96, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-  paywallTitle: { marginBottom: 8 },
-  paywallSubtitle: { marginBottom: 32 },
-  features: { width: '100%', marginBottom: 32 },
-  featureItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  featureIcon: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-  featureText: { flex: 1 },
-  priceContainer: { alignItems: 'center', marginBottom: 24 },
-  subscribeButton: { width: '100%', marginBottom: 16 },
-  restoreButton: { padding: 12 },
-  disclaimer: { marginTop: 16, paddingHorizontal: 16 },
 });

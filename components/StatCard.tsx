@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui/Card';
@@ -14,19 +14,22 @@ interface StatCardProps {
   onPress?: () => void;
 }
 
-export function StatCard({ title, value, subtitle, change, icon, onPress }: StatCardProps) {
+// Pre-computed formatter for performance
+const formatValue = (val: string | number): string => {
+  if (typeof val === 'number') {
+    if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `${(val / 1000).toFixed(1)}K`;
+    return val.toLocaleString();
+  }
+  return val;
+};
+
+export const StatCard = React.memo(function StatCard({ title, value, subtitle, change, icon, onPress }: StatCardProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
-  const formatValue = (val: string | number): string => {
-    if (typeof val === 'number') {
-      if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
-      if (val >= 1000) return `${(val / 1000).toFixed(1)}K`;
-      return val.toLocaleString();
-    }
-    return val;
-  };
-
+  // Memoize formatted value
+  const formattedValue = useMemo(() => formatValue(value), [value]);
   const isPositiveChange = change !== undefined && change >= 0;
 
   return (
@@ -40,7 +43,7 @@ export function StatCard({ title, value, subtitle, change, icon, onPress }: Stat
         )}
       </View>
       <Text variant="title" weight="semibold" style={styles.value}>
-        {formatValue(value)}
+        {formattedValue}
       </Text>
       <View style={styles.footer}>
         {subtitle && (
@@ -79,7 +82,7 @@ export function StatCard({ title, value, subtitle, change, icon, onPress }: Stat
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
