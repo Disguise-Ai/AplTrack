@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
+import { PurchasesPackage } from 'react-native-purchases';
 import { getOfferings, purchasePackage, checkPremiumStatus, restorePurchases } from '@/lib/revenuecat';
-import { updateSubscription, getSubscription, startTrial } from '@/lib/api';
+import { getSubscription, startTrial, updateSubscription } from '@/lib/api';
 import { useAuth } from './useAuth';
 import { supabase } from '@/lib/supabase';
 import { Config } from '@/constants/Config';
@@ -29,11 +29,9 @@ interface SubscriptionState {
   purchasing: boolean;
   error: string | null;
   expiresAt: string | null;
-  // Trial info
   isTrial: boolean;
   trialStartedAt: string | null;
   trialEndsAt: string | null;
-  // Feature access
   maxDataSources: number;
   canAccessAttribution: boolean;
   canAccessAIChat: boolean;
@@ -56,20 +54,18 @@ export function useSubscription() {
   });
 
   const loadSubscriptionData = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      // Check database subscription status first
       let isPremiumFromDB = false;
       let expiresAt: string | null = null;
       let isTrial = false;
       let trialStartedAt: string | null = null;
       let trialEndsAt: string | null = null;
 
+      // Check database subscription status
       if (user) {
         try {
           const subscription = await getSubscription(user.id);
-
-          // Check if trial has expired
           const trialExpired = subscription.is_trial &&
             subscription.trial_ends_at &&
             new Date(subscription.trial_ends_at) < new Date();
@@ -85,7 +81,7 @@ export function useSubscription() {
         }
       }
 
-      // Also check RevenueCat
+      // Also check RevenueCat for subscription status
       const [isPremiumRC, packages] = await Promise.all([
         checkPremiumStatus(),
         getOfferings(),
@@ -108,7 +104,7 @@ export function useSubscription() {
         ...tierAccess,
       });
     } catch (error: any) {
-      console.log('Subscription data not available:', error.message);
+      console.log('Subscription data error:', error.message);
       setState({
         isPremium: false,
         packages: [],
@@ -125,8 +121,6 @@ export function useSubscription() {
   }, [user]);
 
   useEffect(() => {
-    // Only load subscription data when we have a user
-    // This prevents premature "not premium" state when auth is still loading
     if (user) {
       loadSubscriptionData();
     }
@@ -153,82 +147,101 @@ export function useSubscription() {
     };
   }, [user, loadSubscriptionData]);
 
+  // Purchase via RevenueCat (real Apple payment)
   const purchase = useCallback(async (pkg: PurchasesPackage) => {
     if (!user) throw new Error('Must be logged in to purchase');
-    setState((prev) => ({ ...prev, purchasing: true, error: null }));
+    setState(prev => ({ ...prev, purchasing: true, error: null }));
     try {
       const customerInfo = await purchasePackage(pkg);
       if (!customerInfo) {
         throw new Error('Purchase was not completed');
       }
       const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
+
+      // Update database with purchase info
       await updateSubscription(
         user.id,
         isPremium,
         customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
         customerInfo.originalAppUserId
       );
+
       const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;
-      setState((prev) => ({ ...prev, isPremium, purchasing: false, ...tierAccess }));
+      setState(prev => ({ ...prev, isPremium, purchasing: false, ...tierAccess }));
       return customerInfo;
     } catch (error: any) {
-      setState((prev) => ({ ...prev, purchasing: false, error: error.message || 'Purchase failed' }));
+      setState(prev => ({ ...prev, purchasing: false, error: error.message || 'Purchase failed' }));
       throw error;
     }
   }, [user]);
 
+  // Subscribe function - uses RevenueCat if available, otherwise grants via DB
+  const subscribe = useCallback(async () => {
+    if (!user) throw new Error('Must be logged in to subscribe');
+
+    // Find the monthly package
+    const monthlyPkg = state.packages.find(pkg =>
+      pkg.identifier === '$rc_monthly' || pkg.packageType === 'MONTHLY'
+    );
+
+    if (monthlyPkg) {
+      // Use RevenueCat for real payment
+      return await purchase(monthlyPkg);
+    } else {
+      // No packages available - throw error instead of granting premium
+      throw new Error('No subscription packages available. Please try again later.');
+    }
+  }, [user, state.packages, purchase]);
+
+  // Restore purchases via RevenueCat
   const restore = useCallback(async () => {
     if (!user) throw new Error('Must be logged in to restore purchases');
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       const customerInfo = await restorePurchases();
-      if (!customerInfo) {
-        setState((prev) => ({ ...prev, loading: false }));
-        return null;
+      if (customerInfo) {
+        const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
+        if (isPremium) {
+          await updateSubscription(
+            user.id,
+            isPremium,
+            customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
+            customerInfo.originalAppUserId
+          );
+        }
+        const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;
+        setState(prev => ({ ...prev, isPremium, loading: false, ...tierAccess }));
+        return customerInfo;
       }
-      const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
-      await updateSubscription(
-        user.id,
-        isPremium,
-        customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
-        customerInfo.originalAppUserId
-      );
-      const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;
-      setState((prev) => ({ ...prev, isPremium, loading: false, ...tierAccess }));
-      return customerInfo;
+      setState(prev => ({ ...prev, loading: false }));
+      return null;
     } catch (error: any) {
-      setState((prev) => ({ ...prev, loading: false, error: error.message || 'Failed to restore purchases' }));
+      setState(prev => ({ ...prev, loading: false, error: error.message || 'Failed to restore purchases' }));
       throw error;
     }
   }, [user]);
 
-  // Helper to check if user can add more data sources
   const canAddDataSource = useCallback((currentCount: number): boolean => {
     return currentCount < state.maxDataSources;
   }, [state.maxDataSources]);
 
-  // Helper to check feature access
   const checkFeatureAccess = useCallback((feature: 'attribution' | 'aiChat' | 'community'): boolean => {
     switch (feature) {
-      case 'attribution':
-        return state.canAccessAttribution;
-      case 'aiChat':
-        return state.canAccessAIChat;
-      case 'community':
-        return state.canAccessCommunity;
-      default:
-        return false;
+      case 'attribution': return state.canAccessAttribution;
+      case 'aiChat': return state.canAccessAIChat;
+      case 'community': return state.canAccessCommunity;
+      default: return false;
     }
   }, [state]);
 
   const beginTrial = useCallback(async () => {
     if (!user) throw new Error('Must be logged in to start trial');
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       await startTrial(user.id);
       await loadSubscriptionData();
     } catch (error: any) {
-      setState((prev) => ({ ...prev, loading: false, error: error.message || 'Failed to start trial' }));
+      setState(prev => ({ ...prev, loading: false, error: error.message || 'Failed to start trial' }));
       throw error;
     }
   }, [user, loadSubscriptionData]);
@@ -236,12 +249,13 @@ export function useSubscription() {
   return {
     ...state,
     purchase,
+    subscribe,
     restore,
     refresh: loadSubscriptionData,
     canAddDataSource,
     checkFeatureAccess,
     beginTrial,
-    monthlyPackage: state.packages.find((pkg) =>
+    monthlyPackage: state.packages.find(pkg =>
       pkg.identifier === '$rc_monthly' || pkg.packageType === 'MONTHLY'
     ),
   };
