@@ -63,9 +63,24 @@ export default function DashboardScreen() {
   const formatCurrency = useCallback((value: number): string =>
     `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, []);
 
+  // Track if we've done initial load
+  const hasLoadedInitially = useRef(false);
+
+  // Force immediate data load when user becomes available (most important!)
   useEffect(() => {
-    if (user) {
+    if (user && !hasLoadedInitially.current) {
+      hasLoadedInitially.current = true;
+      // Load everything immediately on first mount with user
       loadConnectedSources();
+      loadMetrics();
+      syncAnalytics().then(() => setLastSyncTime(new Date()));
+      refreshSubscription();
+
+      // Also sync from data sources in background
+      syncAllDataSources(user.id).then(() => {
+        loadMetrics();
+        setLastSyncTime(new Date());
+      }).catch(() => {});
     }
   }, [user]);
 
@@ -73,7 +88,6 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       if (user) {
-        console.log('[Dashboard] Screen focused, refreshing data');
         refreshProfile();
         loadConnectedSources();
         // Load metrics immediately from database (fast)
@@ -84,25 +98,23 @@ export default function DashboardScreen() {
     }, [user, loadMetrics, syncAnalytics])
   );
 
-  // Auto-refresh on sign-in (when coming from verify-code screen)
+  // Additional refresh when coming from auth with refresh param
   useEffect(() => {
     if (user && params.refresh === 'true' && !hasRefreshedOnLogin.current) {
       hasRefreshedOnLogin.current = true;
-      console.log('[Dashboard] User signed in, refreshing data...');
 
       // Refresh subscription status
       refreshSubscription();
 
       // Sync analytics data
       syncAnalytics().then(() => {
-        console.log('[Dashboard] Initial sync complete');
         setLastSyncTime(new Date());
       });
 
       // Sync from data sources in background
       syncAllDataSources(user.id).then(() => {
-        console.log('[Dashboard] Background sync from sources complete');
         syncAnalytics();
+        loadMetrics();
         setLastSyncTime(new Date());
       }).catch(() => {});
     }

@@ -9,6 +9,7 @@ import {
   Modal,
   Image,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,13 +28,15 @@ interface LockedFeatureProps {
 
 export function LockedFeature({ children, feature, featureTitle }: LockedFeatureProps) {
   const { useSubscription } = require('@/hooks/useSubscription');
-  const { isPremium, isTrial } = useSubscription();
+  const { isPremium, isTrial, loading } = useSubscription();
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const [showPaywall, setShowPaywall] = React.useState(false);
 
-  // Allow access if premium or on trial
-  if (isPremium || isTrial) {
+  // Show content immediately while loading to prevent flash
+  // Pro users will see content, non-pro users will see brief content then lock
+  // This prevents the jarring "lock screen flash" for pro members
+  if (loading || isPremium || isTrial) {
     return <>{children}</>;
   }
 
@@ -133,10 +136,22 @@ function LockedFeaturePaywall({ visible, onClose }: { visible: boolean; onClose:
 
   const handleSubscribe = async () => {
     try {
+      // Try RevenueCat subscription - this triggers the Apple payment sheet
       await subscribe();
+      Alert.alert('Success!', 'Welcome to Statly Premium!');
       onClose();
     } catch (error: any) {
-      console.error('Subscribe error:', error);
+      // Don't show error if user just cancelled
+      if (error.message === 'Purchase cancelled') {
+        return;
+      }
+
+      // Show error to user so they know what happened
+      Alert.alert(
+        'Purchase Failed',
+        error.message || 'Something went wrong. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -145,7 +160,7 @@ function LockedFeaturePaywall({ visible, onClose }: { visible: boolean; onClose:
       await beginTrial();
       onClose();
     } catch (error: any) {
-      console.error('Trial error:', error);
+      Alert.alert('Error', error.message || 'Failed to start trial');
     }
   };
 
@@ -283,10 +298,10 @@ export function Paywall({
             </View>
 
             <View style={styles.priceRow}>
-              <Text variant="title" weight="bold" style={{ fontSize: 40 }}>
+              <Text variant="title" weight="bold" style={{ fontSize: 48, lineHeight: 56 }}>
                 {monthlyPrice}
               </Text>
-              <Text variant="body" color="secondary" style={{ marginLeft: 4 }}>
+              <Text variant="body" color="secondary" style={{ marginLeft: 4, marginBottom: 8 }}>
                 /month
               </Text>
             </View>
@@ -428,12 +443,13 @@ const styles = StyleSheet.create({
   },
   pricingCard: {
     borderRadius: 16,
-    padding: 20,
+    padding: 24,
+    paddingTop: 20,
     marginBottom: 20,
     alignItems: 'center',
   },
   pricingHeader: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   popularBadge: {
     paddingHorizontal: 12,
@@ -442,8 +458,8 @@ const styles = StyleSheet.create({
   },
   priceRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 4,
+    alignItems: 'flex-end',
+    marginBottom: 8,
   },
   ctaButton: {
     borderRadius: 12,

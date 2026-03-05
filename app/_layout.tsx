@@ -1,13 +1,23 @@
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
 import { syncAllDataSources } from '@/lib/api';
+import { configureSuperwall, identifySuperwallUser } from '@/lib/superwall';
+
+// Ignore RevenueCat configuration warnings (expected during development)
+LogBox.ignoreLogs([
+  '[RevenueCat]',
+  'There is an issue with your configuration',
+  'no App Store products registered',
+  'offerings-empty',
+  'sdk-troubleshooting',
+]);
 
 export default function RootLayout() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -16,11 +26,16 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
+    // Configure Superwall on app startup
+    configureSuperwall();
+
     // Trigger background sync on app startup for any authenticated user
     const triggerBackgroundSync = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         console.log('[App] Triggering background sync on startup');
+        // Identify user with Superwall
+        identifySuperwallUser(session.user.id);
         // Don't await - let it run in background
         syncAllDataSources(session.user.id).catch(() => {});
       }

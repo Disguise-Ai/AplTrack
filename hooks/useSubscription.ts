@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PurchasesPackage } from 'react-native-purchases';
-import { getOfferings, purchasePackage, checkPremiumStatus, restorePurchases } from '@/lib/revenuecat';
+import { getOfferings, purchasePackage, purchaseProduct, checkPremiumStatus, restorePurchases, initializeRevenueCat, logInRevenueCat } from '@/lib/revenuecat';
 import { getSubscription, startTrial, updateSubscription } from '@/lib/api';
 import { useAuth } from './useAuth';
 import { supabase } from '@/lib/supabase';
@@ -81,11 +81,27 @@ export function useSubscription() {
         }
       }
 
-      // Also check RevenueCat for subscription status
-      const [isPremiumRC, packages] = await Promise.all([
-        checkPremiumStatus(),
-        getOfferings(),
-      ]);
+      // Ensure RevenueCat is initialized before fetching offerings
+      if (user) {
+        try {
+          await initializeRevenueCat(user.id);
+          await logInRevenueCat(user.id);
+        } catch (e) {
+          // Silently handle - expected during development
+        }
+      }
+
+      // Check RevenueCat for subscription status
+      let isPremiumRC = false;
+      let packages: PurchasesPackage[] = [];
+      try {
+        [isPremiumRC, packages] = await Promise.all([
+          checkPremiumStatus(),
+          getOfferings(),
+        ]);
+      } catch (e) {
+        // Silently handle - expected during development
+      }
 
       // User is premium if either source says so
       const isPremium = isPremiumFromDB || isPremiumRC;
@@ -103,8 +119,8 @@ export function useSubscription() {
         trialEndsAt,
         ...tierAccess,
       });
-    } catch (error: any) {
-      console.log('Subscription data error:', error.message);
+    } catch {
+      // Silently handle - subscription data not available (expected during development)
       setState({
         isPremium: false,
         packages: [],
@@ -152,10 +168,9 @@ export function useSubscription() {
     if (!user) throw new Error('Must be logged in to purchase');
     setState(prev => ({ ...prev, purchasing: true, error: null }));
     try {
+      // This triggers the Apple payment sheet
       const customerInfo = await purchasePackage(pkg);
-      if (!customerInfo) {
-        throw new Error('Purchase was not completed');
-      }
+
       const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
 
       // Update database with purchase info
@@ -175,23 +190,65 @@ export function useSubscription() {
     }
   }, [user]);
 
-  // Subscribe function - uses RevenueCat if available, otherwise grants via DB
+  // Subscribe function - uses RevenueCat for real Apple payment
   const subscribe = useCallback(async () => {
-    if (!user) throw new Error('Must be logged in to subscribe');
+    if (!user) throw new Error('Please sign in to subscribe');
 
-    // Find the monthly package
-    const monthlyPkg = state.packages.find(pkg =>
-      pkg.identifier === '$rc_monthly' || pkg.packageType === 'MONTHLY'
-    );
+    setState(prev => ({ ...prev, purchasing: true, error: null }));
 
-    if (monthlyPkg) {
-      // Use RevenueCat for real payment
-      return await purchase(monthlyPkg);
-    } else {
-      // No packages available - throw error instead of granting premium
-      throw new Error('No subscription packages available. Please try again later.');
+    try {
+      // Ensure RevenueCat is initialized
+      await initializeRevenueCat(user.id);
+      await logInRevenueCat(user.id);
+
+      // Find the monthly package from current state
+      let monthlyPkg = state.packages.find(pkg =>
+        pkg.identifier === '$rc_monthly' || pkg.packageType === 'MONTHLY'
+      );
+
+      // If no packages loaded yet, try to fetch them now
+      if (!monthlyPkg) {
+        const freshPackages = await getOfferings();
+
+        monthlyPkg = freshPackages.find(pkg =>
+          pkg.identifier === '$rc_monthly' || pkg.packageType === 'MONTHLY'
+        );
+
+        // Update state with fresh packages
+        if (freshPackages.length > 0) {
+          setState(prev => ({ ...prev, packages: freshPackages }));
+        }
+      }
+
+      let customerInfo;
+
+      if (monthlyPkg) {
+        // Use RevenueCat package purchase - this triggers the native payment sheet
+        customerInfo = await purchasePackage(monthlyPkg);
+      } else {
+        // Fallback: purchase directly using product ID
+        customerInfo = await purchaseProduct(Config.PREMIUM_MONTHLY_PRODUCT_ID);
+      }
+
+      // Purchase successful - update state and database
+      const isPremium = customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID] !== undefined;
+
+      await updateSubscription(
+        user.id,
+        isPremium,
+        customerInfo.entitlements.active[Config.PREMIUM_ENTITLEMENT_ID]?.expirationDate ?? undefined,
+        customerInfo.originalAppUserId
+      );
+
+      const tierAccess = isPremium ? PREMIUM_TIER : FREE_TIER;
+      setState(prev => ({ ...prev, isPremium, purchasing: false, ...tierAccess }));
+      return customerInfo;
+
+    } catch (error: any) {
+      setState(prev => ({ ...prev, purchasing: false, error: error.message || 'Purchase failed' }));
+      throw error;
     }
-  }, [user, state.packages, purchase]);
+  }, [user, state.packages]);
 
   // Restore purchases via RevenueCat
   const restore = useCallback(async () => {

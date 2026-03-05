@@ -35,8 +35,8 @@ export default function AuthCallbackScreen() {
             const profile = await getProfile(session.user.id);
             setTimeout(() => {
               if (profile) {
-                // Profile exists = existing user, go to dashboard
-                router.replace('/(tabs)/dashboard');
+                // Profile exists = existing user, go to dashboard with refresh flag
+                router.replace('/(tabs)/dashboard?refresh=true');
               } else {
                 // No profile = new user, needs onboarding
                 router.replace('/(onboarding)/company');
@@ -54,7 +54,7 @@ export default function AuthCallbackScreen() {
               } else {
                 // Network/other error - assume existing user, go to dashboard
                 // They'll be re-validated by the main auth logic
-                router.replace('/(tabs)/dashboard');
+                router.replace('/(tabs)/dashboard?refresh=true');
               }
             }, 1500);
           }

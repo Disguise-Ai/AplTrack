@@ -21,7 +21,7 @@ export default function Index() {
         if (needsOnboarding) {
           router.replace('/(onboarding)/company');
         } else {
-          router.replace('/(tabs)/dashboard');
+          router.replace('/(tabs)/dashboard?refresh=true');
         }
       } else {
         router.replace('/(auth)/welcome');

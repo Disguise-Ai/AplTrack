@@ -73,8 +73,8 @@ export default function CheckEmailScreen() {
     try {
       const profile = await getProfile(userId);
       if (profile) {
-        // Profile exists = existing user, go to dashboard
-        router.replace('/(tabs)/dashboard');
+        // Profile exists = existing user, go to dashboard with refresh flag
+        router.replace('/(tabs)/dashboard?refresh=true');
       } else {
         // No profile = new user, needs onboarding
         router.replace('/(onboarding)/company');
@@ -89,7 +89,7 @@ export default function CheckEmailScreen() {
         router.replace('/(onboarding)/company');
       } else {
         // Network/other error - assume existing user, go to dashboard
-        router.replace('/(tabs)/dashboard');
+        router.replace('/(tabs)/dashboard?refresh=true');
       }
     }
   };

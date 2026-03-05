@@ -120,7 +120,7 @@ export default function ConnectScreen() {
     setLoading(true);
     try {
       await updateProfile({ onboarding_completed: true });
-      router.replace('/(tabs)/dashboard');
+      router.replace('/(tabs)/dashboard?refresh=true');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to complete setup');
     } finally {
