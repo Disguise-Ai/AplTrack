@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/Colors';
 import { syncAllDataSources } from '@/lib/api';
 import { configureSuperwall, identifySuperwallUser } from '@/lib/superwall';
+import { registerForPushNotifications, savePushToken, addNotificationReceivedListener, addNotificationResponseReceivedListener, clearBadgeCount } from '@/lib/notifications';
 
 // Ignore RevenueCat configuration warnings (expected during development)
 LogBox.ignoreLogs([
@@ -38,9 +39,34 @@ export default function RootLayout() {
         identifySuperwallUser(session.user.id);
         // Don't await - let it run in background
         syncAllDataSources(session.user.id).catch(() => {});
+
+        // Register for push notifications
+        const pushToken = await registerForPushNotifications();
+        if (pushToken) {
+          console.log('[App] Push token:', pushToken);
+          await savePushToken(session.user.id, pushToken);
+        }
+
+        // Clear badge count when app opens
+        clearBadgeCount();
       }
     };
     triggerBackgroundSync();
+
+    // Set up notification listeners
+    const notificationReceivedSub = addNotificationReceivedListener((notification) => {
+      console.log('[App] Notification received:', notification);
+    });
+
+    const notificationResponseSub = addNotificationResponseReceivedListener((response) => {
+      console.log('[App] Notification tapped:', response);
+      // Handle notification tap - could navigate to specific screen
+      const data = response.notification.request.content.data;
+      if (data?.type === 'new_sale' || data?.type === 'new_download') {
+        // Navigate to dashboard
+        router.replace('/(tabs)/dashboard');
+      }
+    });
 
     // Handle deep links for auth
     const handleDeepLink = async (url: string) => {
@@ -78,7 +104,11 @@ export default function RootLayout() {
 
     // Listen for URL changes while app is open
     const subscription = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      notificationReceivedSub.remove();
+      notificationResponseSub.remove();
+    };
   }, []);
 
   return (

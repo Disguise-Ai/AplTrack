@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
-import { updateWidgetData } from '@/lib/widgetData';
+import { updateWidgetData, reloadWidgets } from '@/lib/widgetData';
 import type { ConnectedApp, AnalyticsSnapshot, AttributionData } from '@/lib/supabase';
 
 // Get today's date in EST timezone
@@ -49,9 +49,9 @@ export function useAnalytics() {
     activeSubscriptions: 0,
     activeTrials: 0,
     mrr: 0,
-    newCustomers28d: 0,
-    revenue28d: 0,
-    activeUsers28d: 0,
+    newCustomers30d: 0,
+    revenue30d: 0,
+    activeUsers30d: 0,
   });
 
   // Load metrics directly from database - simple and reliable
@@ -81,9 +81,9 @@ export function useAnalytics() {
           activeSubscriptions: 0,
           activeTrials: 0,
           mrr: 0,
-          newCustomers28d: 0,
-          revenue28d: 0,
-          activeUsers28d: 0,
+          newCustomers30d: 0,
+          revenue30d: 0,
+          activeUsers30d: 0,
         });
         setState(prev => ({ ...prev, apps: [], loading: false }));
         return;
@@ -113,9 +113,9 @@ export function useAnalytics() {
       let activeSubscriptions = 0;
       let activeTrials = 0;
       let mrr = 0;
-      let newCustomers28d = 0;
-      let revenue28d = 0;
-      let activeUsers28d = 0;
+      let newCustomers30d = 0;
+      let revenue30d = 0;
+      let activeUsers30d = 0;
 
       // Track daily values for weekly sum
       const dailyDownloads: Record<string, number> = {};
@@ -149,9 +149,9 @@ export function useAnalytics() {
           if (metric_type === 'active_subscriptions') activeSubscriptions = metric_value;
           if (metric_type === 'active_trials') activeTrials = metric_value;
           if (metric_type === 'mrr') mrr = metric_value;
-          if (metric_type === 'new_customers_28d' || metric_type === 'new_customers') newCustomers28d = metric_value;
-          if (metric_type === 'revenue_28d' || metric_type === 'revenue') revenue28d = metric_value;
-          if (metric_type === 'active_users') activeUsers28d = metric_value;
+          if (metric_type === 'new_customers_30d' || metric_type === 'new_customers_28d' || metric_type === 'new_customers') newCustomers30d = metric_value;
+          if (metric_type === 'revenue_30d' || metric_type === 'revenue_28d' || metric_type === 'revenue') revenue30d = metric_value;
+          if (metric_type === 'active_users') activeUsers30d = metric_value;
         }
       }
 
@@ -167,9 +167,9 @@ export function useAnalytics() {
         activeSubscriptions,
         activeTrials,
         mrr,
-        newCustomers28d,
-        revenue28d,
-        activeUsers28d,
+        newCustomers30d,
+        revenue30d,
+        activeUsers30d,
       };
 
       console.log('[useAnalytics] FINAL METRICS:', {
@@ -179,19 +179,21 @@ export function useAnalytics() {
         'Revenue Week': revenueWeek,
         'Active Subs': activeSubscriptions,
         'MRR': mrr,
-        'New Customers 28d': newCustomers28d,
+        'New Customers 30d': newCustomers30d,
       });
 
       setLiveMetrics(newMetrics);
       setState(prev => ({ ...prev, loading: false }));
 
-      // Update iOS widget
-      updateWidgetData({
+      // Update iOS widget with current data
+      console.log('[useAnalytics] Updating widget with:', { downloadsToday, revenueToday, activeSubscriptions });
+      await updateWidgetData({
         downloadsToday,
-        totalDownloads: newCustomers28d,
         revenueToday,
-        totalRevenue: revenue28d,
+        activeSubscriptions,
       });
+      // Force widget refresh
+      await reloadWidgets();
 
     } catch (err: any) {
       console.error('[useAnalytics] Error:', err);
@@ -249,16 +251,16 @@ export function useAnalytics() {
       activeTrials: liveMetrics.activeTrials,
       mrr: liveMetrics.mrr,
 
-      // 28-day
-      newCustomers: liveMetrics.newCustomers28d,
-      revenue: liveMetrics.revenue28d,
-      activeUsers: liveMetrics.activeUsers28d || liveMetrics.newCustomers28d,
+      // 30-day
+      newCustomers: liveMetrics.newCustomers30d,
+      revenue: liveMetrics.revenue30d,
+      activeUsers: liveMetrics.activeUsers30d || liveMetrics.newCustomers30d,
 
       // Aliases for compatibility
-      downloadsMonth: liveMetrics.newCustomers28d,
-      totalDownloads: liveMetrics.newCustomers28d,
-      revenueMonth: liveMetrics.revenue28d,
-      totalRevenue: liveMetrics.revenue28d,
+      downloadsMonth: liveMetrics.newCustomers30d,
+      totalDownloads: liveMetrics.newCustomers30d,
+      revenueMonth: liveMetrics.revenue30d,
+      totalRevenue: liveMetrics.revenue30d,
 
       // Placeholders
       averageRating: 0,

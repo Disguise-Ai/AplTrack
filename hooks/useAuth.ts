@@ -59,10 +59,8 @@ export function useAuth() {
               profileLoadFailed = true;
             }
           }
-          // Initialize RevenueCat for payments (skip on macOS)
-          if (Platform.OS !== 'macos') {
-            initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
-          }
+          // Initialize RevenueCat for payments (works on iOS and Mac Catalyst)
+          initializeRevenueCat(session.user.id).then(() => logInRevenueCat(session.user.id)).catch(() => {});
         }
         setState({ session, user: session?.user ?? null, profile, loading: false, initialized: true, profileLoadFailed });
       } catch (error: any) {

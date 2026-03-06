@@ -93,12 +93,36 @@ export default function SettingsScreen() {
 
   const handlePurchase = async () => {
     try {
+      // Try RevenueCat subscription
       await subscribe();
       setShowPaywall(false);
       Alert.alert('Success', 'Welcome to Statly Premium!');
     } catch (error: any) {
       // Don't show error if user just cancelled
-      if (error.message !== 'Purchase cancelled') {
+      if (error.message === 'Purchase cancelled') return;
+
+      // If no packages available, offer trial instead
+      if (error.message?.includes('No subscription packages')) {
+        Alert.alert(
+          'Start Free Trial?',
+          'In-app purchases are being configured. Would you like to start a free 72-hour trial instead?',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Start Trial',
+              onPress: async () => {
+                try {
+                  await beginTrial();
+                  setShowPaywall(false);
+                  Alert.alert('Trial Started!', 'Your 72-hour free trial has begun. Enjoy full access to all features!');
+                } catch (e: any) {
+                  Alert.alert('Error', e.message || 'Failed to start trial');
+                }
+              }
+            }
+          ]
+        );
+      } else {
         Alert.alert('Error', error.message || 'Subscribe failed. Please try again.');
       }
     }

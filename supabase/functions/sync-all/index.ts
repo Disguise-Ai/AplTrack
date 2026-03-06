@@ -28,7 +28,7 @@ function getESTDaysAgo(days: number): string {
 async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boolean; data?: any; error?: string }> {
   const credentials = app.credentials || {};
   const apiKey = (credentials.api_key || "").trim();
-  let projectId = (credentials.project_id || credentials.app_id || "").trim();
+  const specifiedProjectId = (credentials.project_id || credentials.app_id || "").trim();
   // Use EST timezone for date calculations
   const today = getESTDate();
   console.log(`[RC] Using EST date: ${today}`);
@@ -37,56 +37,82 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
     return { success: false, error: "No API key" };
   }
 
-  // Get project ID if not provided
-  if (!projectId) {
+  // Get ALL projects associated with this API key
+  let projectIds: string[] = [];
+  let projectNames: string[] = [];
+
+  console.log(`[RC] specifiedProjectId: "${specifiedProjectId}"`);
+
+  if (specifiedProjectId) {
+    // If a specific project ID is provided, use only that one
+    projectIds = [specifiedProjectId];
+    console.log(`[RC] Using specified project: ${specifiedProjectId}`);
+  } else {
+    // Get ALL projects from RevenueCat
     const resp = await fetch("https://api.revenuecat.com/v2/projects", {
       headers: { "Authorization": `Bearer ${apiKey}` },
     });
     if (!resp.ok) return { success: false, error: "Invalid API key" };
     const data = await resp.json();
+    console.log(`[RC] Projects API response:`, JSON.stringify(data, null, 2));
     if (!data.items?.length) return { success: false, error: "No projects" };
-    projectId = data.items[0].id;
+
+    // Get ALL project IDs, not just the first one!
+    projectIds = data.items.map((item: any) => item.id);
+    projectNames = data.items.map((item: any) => item.name);
+    console.log(`[RC] Found ${projectIds.length} projects:`, projectNames, projectIds);
   }
 
-  // Get overview metrics from RevenueCat
-  const overviewResp = await fetch(
-    `https://api.revenuecat.com/v2/projects/${projectId}/metrics/overview`,
-    { headers: { "Authorization": `Bearer ${apiKey}` } }
-  );
-
-  if (!overviewResp.ok) {
-    return { success: false, error: "Failed to fetch metrics" };
-  }
-
-  const overviewData = await overviewResp.json();
-
-  // LOG THE FULL API RESPONSE to see exactly what RevenueCat returns
-  console.log(`[RC] FULL API RESPONSE:`, JSON.stringify(overviewData, null, 2));
-
-  const metrics = overviewData.metrics || [];
-
-  // Log each metric individually
-  console.log(`[RC] Number of metrics returned: ${metrics.length}`);
-  for (const m of metrics) {
-    console.log(`[RC] Metric: id="${m.id}", name="${m.name}", value=${m.value}, description="${m.description}"`);
-  }
-
-  // Parse RevenueCat metrics - using exact field names from API
+  // Aggregate metrics from ALL projects
   let newCustomers = 0, revenue = 0, activeUsers = 0, mrr = 0, activeSubs = 0, activeTrials = 0;
 
-  for (const m of metrics) {
-    const id = (m.id || "").toLowerCase();
-    const val = m.value || 0;
-    if (id === "new_customers") newCustomers = val;
-    if (id === "revenue") revenue = val;
-    if (id === "active_users" || id === "active_customers") activeUsers = val;
-    if (id === "mrr") mrr = val;
-    if (id === "active_subscriptions") activeSubs = val;
-    if (id === "active_trials") activeTrials = val;
+  for (const projectId of projectIds) {
+    console.log(`[RC] Fetching metrics for project: ${projectId}`);
+
+    // Get overview metrics from RevenueCat for this project
+    const overviewResp = await fetch(
+      `https://api.revenuecat.com/v2/projects/${projectId}/metrics/overview`,
+      { headers: { "Authorization": `Bearer ${apiKey}` } }
+    );
+
+    if (!overviewResp.ok) {
+      console.log(`[RC] Failed to fetch metrics for project ${projectId}: ${overviewResp.status}`);
+      continue;
+    }
+
+    const overviewData = await overviewResp.json();
+    console.log(`[RC] Project ${projectId} response:`, JSON.stringify(overviewData, null, 2));
+
+    const metrics = overviewData.metrics || [];
+
+    // Log each metric individually
+    console.log(`[RC] Project ${projectId} - ${metrics.length} metrics returned`);
+    for (const m of metrics) {
+      console.log(`[RC] Metric: id="${m.id}", name="${m.name}", value=${m.value}`);
+    }
+
+    // Parse and ADD to running totals (aggregate across all projects)
+    for (const m of metrics) {
+      const id = (m.id || "").toLowerCase();
+      const val = parseFloat(m.value || 0);
+      if (id === "new_customers") newCustomers += val;
+      if (id === "revenue") revenue += val;
+      if (id === "active_users" || id === "active_customers") activeUsers += val;
+      if (id === "mrr") mrr += val;
+      if (id === "active_subscriptions") activeSubs += val;
+      if (id === "active_trials") activeTrials += val;
+    }
   }
 
+  console.log(`[RC] AGGREGATED from ${projectIds.length} projects:`);
+  console.log(`[RC] new_customers=${newCustomers}, revenue=${revenue}, active_users=${activeUsers}`);
+  console.log(`[RC] mrr=${mrr}, active_subscriptions=${activeSubs}, active_trials=${activeTrials}`);
+
+  // Use the first project for Charts API calls (daily breakdown)
+  const primaryProjectId = projectIds[0];
+
   console.log(`[RC] REAL-TIME VALUES: active_subscriptions=${activeSubs}, active_trials=${activeTrials}, mrr=${mrr}`);
-  console.log(`[RC] 28-DAY VALUES: new_customers=${newCustomers}, revenue=${revenue}, active_users=${activeUsers}`);
+  console.log(`[RC] 30-DAY VALUES: new_customers=${newCustomers}, revenue=${revenue}, active_users=${activeUsers}`);
 
   const metricsToInsert = [];
 
@@ -157,7 +183,7 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
   let revenueBaseline = 0;
   let foundYesterdayRevenue = false;
 
-  const revenueMetricTypes = ["revenue_28d", "revenue", "revenue_total"];
+  const revenueMetricTypes = ["revenue_30d", "revenue_28d", "revenue", "revenue_total"];
   for (const metricType of revenueMetricTypes) {
     // Search ALL revenuecat metrics from yesterday
     const { data } = await supabase
@@ -197,9 +223,9 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
     { app_id: app.id, provider: "revenuecat", metric_type: "active_subscriptions", metric_value: activeSubs, metric_date: today },
     { app_id: app.id, provider: "revenuecat", metric_type: "active_trials", metric_value: activeTrials, metric_date: today },
     { app_id: app.id, provider: "revenuecat", metric_type: "mrr", metric_value: mrr, metric_date: today },
-    // 28-day rolling totals
-    { app_id: app.id, provider: "revenuecat", metric_type: "new_customers_28d", metric_value: newCustomers, metric_date: today },
-    { app_id: app.id, provider: "revenuecat", metric_type: "revenue_28d", metric_value: revenue, metric_date: today },
+    // 30-day rolling totals
+    { app_id: app.id, provider: "revenuecat", metric_type: "new_customers_30d", metric_value: newCustomers, metric_date: today },
+    { app_id: app.id, provider: "revenuecat", metric_type: "revenue_30d", metric_value: revenue, metric_date: today },
     { app_id: app.id, provider: "revenuecat", metric_type: "active_users", metric_value: activeUsers || newCustomers, metric_date: today },
     // Legacy metrics for compatibility
     { app_id: app.id, provider: "revenuecat", metric_type: "downloads_today", metric_value: downloadsToday, metric_date: today },
@@ -221,7 +247,7 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
     // Get daily new_customers breakdown using Charts API
     // Try realtime=true first to get today's value, fall back to realtime=false
     let chartResp = await fetch(
-      `https://api.revenuecat.com/v2/projects/${projectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=true`,
+      `https://api.revenuecat.com/v2/projects/${primaryProjectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=true`,
       { headers: { "Authorization": `Bearer ${apiKey}` } }
     );
 
@@ -229,7 +255,7 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
     if (!chartResp.ok) {
       console.log(`[RC] Charts API realtime=true failed (${chartResp.status}), trying realtime=false`);
       chartResp = await fetch(
-        `https://api.revenuecat.com/v2/projects/${projectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=false`,
+        `https://api.revenuecat.com/v2/projects/${primaryProjectId}/charts/customers_new?start_date=${startDate}&end_date=${today}&realtime=false`,
         { headers: { "Authorization": `Bearer ${apiKey}` } }
       );
     }
@@ -288,7 +314,7 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
 
     // Also try to get daily revenue breakdown
     const revenueChartResp = await fetch(
-      `https://api.revenuecat.com/v2/projects/${projectId}/charts/revenue?start_date=${startDate}&end_date=${today}&resolution=day`,
+      `https://api.revenuecat.com/v2/projects/${primaryProjectId}/charts/revenue?start_date=${startDate}&end_date=${today}&resolution=day`,
       { headers: { "Authorization": `Bearer ${apiKey}` } }
     );
 
@@ -366,14 +392,18 @@ async function syncRevenueCat(supabase: any, app: any): Promise<{ success: boole
   return {
     success: true,
     data: {
+      // Debug: projects info
+      projects_count: projectIds.length,
+      project_ids: projectIds,
+      project_names: projectNames,
       // REAL-TIME metrics (current state)
       active_subscriptions: activeSubs,
       active_trials: activeTrials,
       mrr: mrr,
-      // 28-day rolling totals
-      new_customers_28d: newCustomers,
-      revenue_28d: revenue,
-      active_users_28d: activeUsers,
+      // 30-day rolling totals
+      new_customers_30d: newCustomers,
+      revenue_30d: revenue,
+      active_users_30d: activeUsers,
       // Debug: daily values stored
       daily_downloads_stored: metricsToInsert.filter((m: any) => m.metric_type === "downloads_today").map((m: any) => ({ date: m.metric_date, value: m.metric_value })),
       // Debug: Charts API status

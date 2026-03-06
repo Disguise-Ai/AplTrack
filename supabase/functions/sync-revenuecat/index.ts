@@ -107,23 +107,61 @@ serve(async (req) => {
             rawResponse = data;
             console.log("[RevenueCat] Overview data:", JSON.stringify(data));
 
-            // Parse the overview metrics - handle all possible response formats
-            const metricsData = data.metrics || data;
-            console.log("[RevenueCat] Parsing metrics from:", JSON.stringify(metricsData));
+            // Parse the overview metrics - the API returns an ARRAY of metric objects
+            // Each metric has: { id, name, value, description, period, unit, ... }
+            const metricsArray = data.metrics || data;
+            console.log("[RevenueCat] Metrics array type:", Array.isArray(metricsArray) ? "array" : typeof metricsArray);
 
-            metrics.mrr = parseFloat(metricsData.mrr?.value || metricsData.mrr || 0);
-            metrics.revenue = parseFloat(metricsData.revenue?.value || metricsData.revenue || 0);
-            metrics.active_subscriptions = parseInt(metricsData.active_subscriptions?.value || metricsData.active_subscriptions || metricsData.active_subscribers?.value || metricsData.active_subscribers || 0);
-            metrics.active_trials = parseInt(metricsData.active_trials?.value || metricsData.active_trials || 0);
-            metrics.new_customers = parseInt(metricsData.new_customers?.value || metricsData.new_customers || 0);
-            metrics.active_users = parseInt(metricsData.active_customers?.value || metricsData.active_customers || metricsData.active_users?.value || metricsData.active_users || 0);
+            if (Array.isArray(metricsArray)) {
+              // Handle array format: [{id: "mrr", value: 7}, {id: "new_customers", value: 1017}, ...]
+              for (const m of metricsArray) {
+                const id = m.id || m.name?.toLowerCase().replace(/\s+/g, '_');
+                const value = parseFloat(m.value || 0);
+                console.log(`[RevenueCat] Metric: ${id} = ${value}`);
 
-            console.log("[RevenueCat] Parsed: new_customers=" + metrics.new_customers + ", active_users=" + metrics.active_users);
+                switch (id) {
+                  case 'mrr':
+                  case 'monthly_recurring_revenue':
+                    metrics.mrr = value;
+                    break;
+                  case 'revenue':
+                  case 'revenue_last_28_days':
+                    metrics.revenue = value;
+                    break;
+                  case 'active_subscriptions':
+                  case 'active_subscribers':
+                    metrics.active_subscriptions = Math.round(value);
+                    break;
+                  case 'active_trials':
+                    metrics.active_trials = Math.round(value);
+                    break;
+                  case 'new_customers':
+                  case 'new_customers_last_28_days':
+                    metrics.new_customers = Math.round(value);
+                    break;
+                  case 'active_customers':
+                  case 'active_users':
+                    metrics.active_users = Math.round(value);
+                    break;
+                  case 'churn':
+                  case 'churn_rate':
+                    metrics.churn_rate = value > 1 ? value : value * 100;
+                    break;
+                }
+              }
+            } else {
+              // Fallback: Handle object format (legacy or different response)
+              metrics.mrr = parseFloat(metricsArray.mrr?.value || metricsArray.mrr || 0);
+              metrics.revenue = parseFloat(metricsArray.revenue?.value || metricsArray.revenue || 0);
+              metrics.active_subscriptions = parseInt(metricsArray.active_subscriptions?.value || metricsArray.active_subscriptions || metricsArray.active_subscribers?.value || metricsArray.active_subscribers || 0);
+              metrics.active_trials = parseInt(metricsArray.active_trials?.value || metricsArray.active_trials || 0);
+              metrics.new_customers = parseInt(metricsArray.new_customers?.value || metricsArray.new_customers || 0);
+              metrics.active_users = parseInt(metricsArray.active_customers?.value || metricsArray.active_customers || metricsArray.active_users?.value || metricsArray.active_users || 0);
+              const churn = parseFloat(metricsArray.churn_rate?.value || metricsArray.churn || 0);
+              metrics.churn_rate = churn > 1 ? churn : churn * 100;
+            }
 
-            // Churn rate might be expressed as percentage or decimal
-            const churn = parseFloat(metricsData.churn_rate?.value || metricsData.churn || 0);
-            metrics.churn_rate = churn > 1 ? churn : churn * 100; // Convert to percentage if decimal
-
+            console.log("[RevenueCat] Parsed metrics:", JSON.stringify(metrics));
             apiSuccess = true;
           } else {
             const errorText = await overviewResponse.text();
@@ -331,12 +369,12 @@ serve(async (req) => {
     const metricTypes = [
       { type: "mrr", value: metrics.mrr },
       { type: "revenue", value: metrics.revenue },
-      { type: "revenue_28d", value: metrics.revenue },
+      { type: "revenue_30d", value: metrics.revenue },
       { type: "revenue_today", value: metrics.revenue_today },
       { type: "active_subscriptions", value: metrics.active_subscriptions },
       { type: "active_trials", value: metrics.active_trials },
       { type: "new_customers", value: metrics.new_customers },
-      { type: "new_customers_28d", value: metrics.new_customers },
+      { type: "new_customers_30d", value: metrics.new_customers },
       { type: "downloads_today", value: metrics.downloads_today || metrics.new_customers_today },
       { type: "active_users", value: metrics.active_users || metrics.active_subscriptions },
       { type: "churn_rate", value: metrics.churn_rate },

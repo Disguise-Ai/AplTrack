@@ -14,6 +14,7 @@ import { useSubscription } from '@/hooks/useSubscription';
 import { getConnectedApps, syncAllDataSources } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
 import type { ConnectedApp } from '@/lib/supabase';
+import { updateWidgetData, reloadWidgets, getWidgetData, isWidgetModuleAvailable } from '@/lib/widgetData';
 
 const DATA_SOURCE_INFO: Record<string, { name: string; icon: string; color: string }> = {
   revenuecat: { name: 'RevenueCat', icon: '💰', color: '#FF6B6B' },
@@ -63,14 +64,19 @@ export default function DashboardScreen() {
   const formatCurrency = useCallback((value: number): string =>
     `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, []);
 
-  // Track if we've done initial load
-  const hasLoadedInitially = useRef(false);
+  // Track the last user ID we loaded data for
+  const lastLoadedUserId = useRef<string | null>(null);
 
-  // Force immediate data load when user becomes available (most important!)
+  // Force immediate data load when user becomes available or changes
   useEffect(() => {
-    if (user && !hasLoadedInitially.current) {
-      hasLoadedInitially.current = true;
-      // Load everything immediately on first mount with user
+    // Load data if we have a user and either:
+    // 1. We haven't loaded for any user yet
+    // 2. The user ID has changed (different user signed in)
+    if (user && user.id !== lastLoadedUserId.current) {
+      console.log('[Dashboard] Loading data for user:', user.id);
+      lastLoadedUserId.current = user.id;
+
+      // Load everything immediately
       loadConnectedSources();
       loadMetrics();
       syncAnalytics().then(() => setLastSyncTime(new Date()));
@@ -82,7 +88,7 @@ export default function DashboardScreen() {
         setLastSyncTime(new Date());
       }).catch(() => {});
     }
-  }, [user]);
+  }, [user, loadMetrics, syncAnalytics, refreshSubscription]);
 
   // Refresh data when screen comes into focus (e.g., returning from settings or data-sources)
   useFocusEffect(
@@ -97,6 +103,60 @@ export default function DashboardScreen() {
       }
     }, [user, loadMetrics, syncAnalytics])
   );
+
+  // Sync widget data whenever stats change
+  useEffect(() => {
+    console.log('[Dashboard] ====== WIDGET SYNC CHECK ======');
+    console.log('[Dashboard] Widget module available:', isWidgetModuleAvailable());
+    console.log('[Dashboard] Current stats:', JSON.stringify({
+      downloadsToday: stats.downloadsToday,
+      totalRevenue: stats.revenue,
+      newUsers: stats.newCustomers,
+    }));
+
+    const syncWidgetData = async () => {
+      // Only update widget if we have actual data (not all zeros)
+      const hasData = stats.downloadsToday > 0 || stats.revenue > 0 || stats.newCustomers > 0;
+
+      if (!hasData) {
+        console.log('[Dashboard] No data yet, skipping widget sync');
+        return;
+      }
+
+      if (!isWidgetModuleAvailable()) {
+        console.log('[Dashboard] Widget module not available, skipping');
+        return;
+      }
+
+      console.log('[Dashboard] Syncing widget with data...');
+
+      try {
+        const payload = {
+          downloadsToday: stats.downloadsToday,
+          totalRevenue: stats.revenue,
+          newUsers: stats.newCustomers,
+        };
+
+        const success = await updateWidgetData(payload);
+        console.log('[Dashboard] updateWidgetData result:', success);
+
+        if (success) {
+          // Verify the data was written by reading it back
+          const savedData = await getWidgetData();
+          console.log('[Dashboard] Verification - data read back:', JSON.stringify(savedData));
+
+          await reloadWidgets();
+          console.log('[Dashboard] Widget timelines reloaded');
+        }
+      } catch (error: any) {
+        console.error('[Dashboard] Widget sync error:', error?.message || error);
+      }
+
+      console.log('[Dashboard] ====== WIDGET SYNC COMPLETE ======');
+    };
+
+    syncWidgetData();
+  }, [stats.downloadsToday, stats.revenue, stats.newCustomers]);
 
   // Additional refresh when coming from auth with refresh param
   useEffect(() => {
@@ -347,31 +407,31 @@ export default function DashboardScreen() {
         {/* Chart */}
         <Card style={styles.chartCard}>
           <View style={styles.chartHeader}>
-            <Text variant="label" weight="semibold">New Customers (Last 28 Days)</Text>
+            <Text variant="label" weight="semibold">New Customers (Last 30 Days)</Text>
             <Text variant="caption" color="secondary">{stats.newCustomers.toLocaleString()} total</Text>
           </View>
           <LineChart data={chartData} labels={chartLabels} height={200} />
         </Card>
 
-        {/* 28-Day Stats */}
+        {/* 30-Day Stats */}
         <View style={styles.statsRow}>
           <StatCard
             title="New Customers"
             value={stats.newCustomers}
-            subtitle="last 28 days"
+            subtitle="last 30 days"
             icon="person-add-outline"
           />
           <StatCard
             title="Active Users"
             value={stats.activeUsers}
-            subtitle="last 28 days"
+            subtitle="last 30 days"
             icon="people-outline"
           />
         </View>
 
-        {/* 28-Day Overview */}
+        {/* 30-Day Overview */}
         <Card style={styles.overviewCard}>
-          <Text variant="label" weight="semibold" style={styles.overviewTitle}>28-Day Overview</Text>
+          <Text variant="label" weight="semibold" style={styles.overviewTitle}>30-DAY OVERVIEW</Text>
           <View style={styles.overviewRow}>
             <View style={styles.overviewItem}>
               <Text variant="caption" color="secondary">New Customers</Text>
