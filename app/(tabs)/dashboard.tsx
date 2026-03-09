@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, TouchableOpacity, Alert, AppState } from 'react-native';
+import { View, StyleSheet, useColorScheme, ScrollView, RefreshControl, Pressable, Alert, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,10 +14,13 @@ import { useSubscription } from '@/hooks/useSubscription';
 import { getConnectedApps, syncAllDataSources } from '@/lib/api';
 import { Colors } from '@/constants/Colors';
 import type { ConnectedApp } from '@/lib/supabase';
-import { updateWidgetData, reloadWidgets, getWidgetData, isWidgetModuleAvailable } from '@/lib/widgetData';
+import { updateWidgetData, reloadWidgets, isWidgetModuleAvailable } from '@/lib/widgetData';
+import { onRefreshTriggered } from '@/lib/refreshTrigger';
 
 const DATA_SOURCE_INFO: Record<string, { name: string; icon: string; color: string }> = {
   revenuecat: { name: 'RevenueCat', icon: '💰', color: '#FF6B6B' },
+  stripe: { name: 'Stripe', icon: '💳', color: '#635BFF' },
+  superwall: { name: 'Superwall', icon: '🧱', color: '#6366F1' },
   appsflyer: { name: 'AppsFlyer', icon: '📊', color: '#12CBC4' },
   adjust: { name: 'Adjust', icon: '🎯', color: '#0652DD' },
   mixpanel: { name: 'Mixpanel', icon: '📈', color: '#7C4DFF' },
@@ -32,7 +35,7 @@ export default function DashboardScreen() {
   const colors = Colors[colorScheme];
   const { user, profile, refreshProfile } = useAuth();
   const { analytics, stats, syncing, syncAnalytics, loadMetrics, apps, error: syncError } = useAnalytics();
-  const { refresh: refreshSubscription } = useSubscription();
+  const { refresh: refreshSubscription, isPremium } = useSubscription();
   const [connectedSources, setConnectedSources] = useState<ConnectedApp[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -48,6 +51,7 @@ export default function DashboardScreen() {
     const labels: string[] = [];
     const analyticsMap = new Map(analytics.map(a => [a.date, a]));
 
+    // Build 28 days of chart data (matches RevenueCat's 28-day rolling window)
     for (let i = 27; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
@@ -55,8 +59,14 @@ export default function DashboardScreen() {
       const dayData = analyticsMap.get(dateStr);
 
       data.push(dayData?.downloads || 0);
-      labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+      // Only show label every 7 days to avoid crowding
+      if (i % 7 === 0 || i === 0) {
+        labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+      } else {
+        labels.push('');
+      }
     }
+
     return { chartData: data, chartLabels: labels };
   }, [analytics]);
 
@@ -73,7 +83,6 @@ export default function DashboardScreen() {
     // 1. We haven't loaded for any user yet
     // 2. The user ID has changed (different user signed in)
     if (user && user.id !== lastLoadedUserId.current) {
-      console.log('[Dashboard] Loading data for user:', user.id);
       lastLoadedUserId.current = user.id;
 
       // Load everything immediately
@@ -91,72 +100,56 @@ export default function DashboardScreen() {
   }, [user, loadMetrics, syncAnalytics, refreshSubscription]);
 
   // Refresh data when screen comes into focus (e.g., returning from settings or data-sources)
+  // Only reload connected sources and profile - metrics already loaded via useEffect
   useFocusEffect(
     useCallback(() => {
       if (user) {
         refreshProfile();
         loadConnectedSources();
-        // Load metrics immediately from database (fast)
-        loadMetrics();
-        // Then sync from RevenueCat in background (slow)
-        syncAnalytics();
       }
-    }, [user, loadMetrics, syncAnalytics])
+    }, [user, refreshProfile])
   );
 
-  // Sync widget data whenever stats change
+  // Listen for refresh trigger (from push notifications)
   useEffect(() => {
-    console.log('[Dashboard] ====== WIDGET SYNC CHECK ======');
-    console.log('[Dashboard] Widget module available:', isWidgetModuleAvailable());
-    console.log('[Dashboard] Current stats:', JSON.stringify({
-      downloadsToday: stats.downloadsToday,
-      totalRevenue: stats.revenue,
-      newUsers: stats.newCustomers,
-    }));
+    const unsubscribe = onRefreshTriggered(() => {
+      // Reload metrics from database when notification received
+      loadMetrics();
+      setLastSyncTime(new Date());
+    });
+    return unsubscribe;
+  }, [loadMetrics]);
 
-    const syncWidgetData = async () => {
-      // Only update widget if we have actual data (not all zeros)
-      const hasData = stats.downloadsToday > 0 || stats.revenue > 0 || stats.newCustomers > 0;
+  // Sync widget data whenever stats change (debounced to prevent excessive updates)
+  const widgetSyncTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const hasData = stats.downloadsToday > 0 || stats.revenue > 0 || stats.newCustomers > 0;
+    if (!hasData || !isWidgetModuleAvailable()) return;
 
-      if (!hasData) {
-        console.log('[Dashboard] No data yet, skipping widget sync');
-        return;
+    // Debounce widget updates - wait 500ms after last change
+    if (widgetSyncTimeout.current) {
+      clearTimeout(widgetSyncTimeout.current);
+    }
+
+    widgetSyncTimeout.current = setTimeout(() => {
+      updateWidgetData({
+        downloadsToday: stats.downloadsToday,
+        totalRevenue: stats.revenue,
+        newUsers: stats.newCustomers,
+        activeSubscriptions: stats.activeSubscriptions,
+        revenueToday: stats.revenueToday,
+        appName: profile?.app_name || 'Statly',
+      }).then(success => {
+        if (success) reloadWidgets();
+      });
+    }, 500);
+
+    return () => {
+      if (widgetSyncTimeout.current) {
+        clearTimeout(widgetSyncTimeout.current);
       }
-
-      if (!isWidgetModuleAvailable()) {
-        console.log('[Dashboard] Widget module not available, skipping');
-        return;
-      }
-
-      console.log('[Dashboard] Syncing widget with data...');
-
-      try {
-        const payload = {
-          downloadsToday: stats.downloadsToday,
-          totalRevenue: stats.revenue,
-          newUsers: stats.newCustomers,
-        };
-
-        const success = await updateWidgetData(payload);
-        console.log('[Dashboard] updateWidgetData result:', success);
-
-        if (success) {
-          // Verify the data was written by reading it back
-          const savedData = await getWidgetData();
-          console.log('[Dashboard] Verification - data read back:', JSON.stringify(savedData));
-
-          await reloadWidgets();
-          console.log('[Dashboard] Widget timelines reloaded');
-        }
-      } catch (error: any) {
-        console.error('[Dashboard] Widget sync error:', error?.message || error);
-      }
-
-      console.log('[Dashboard] ====== WIDGET SYNC COMPLETE ======');
     };
-
-    syncWidgetData();
-  }, [stats.downloadsToday, stats.revenue, stats.newCustomers]);
+  }, [stats.downloadsToday, stats.revenue, stats.newCustomers, stats.activeSubscriptions, stats.revenueToday, profile?.app_name]);
 
   // Additional refresh when coming from auth with refresh param
   useEffect(() => {
@@ -187,7 +180,6 @@ export default function DashboardScreen() {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const refreshData = async () => {
-      console.log('[Dashboard] Auto-refresh triggered');
       await syncAnalytics();
       setLastSyncTime(new Date());
     };
@@ -228,24 +220,18 @@ export default function DashboardScreen() {
     try {
       const sources = await getConnectedApps(user.id);
       setConnectedSources(sources);
-    } catch (error) {
-      console.error('Error loading sources:', error);
+    } catch {
+      // Failed to load sources
     }
   };
 
   const handleSync = async () => {
     setRefreshing(true);
-    console.log('[Dashboard] Pull to refresh - syncing...');
-
     try {
       if (user) {
-        // syncAnalytics now: 1) calls edge function 2) reloads from database
         await syncAnalytics();
-        console.log('[Dashboard] Sync complete');
         setLastSyncTime(new Date());
       }
-    } catch (error: any) {
-      console.log('[Dashboard] Error:', error.message);
     } finally {
       setRefreshing(false);
     }
@@ -273,13 +259,13 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.push('/settings')} activeOpacity={0.7}>
+          <Pressable onPress={() => router.push('/settings')} style={({ pressed }) => pressed && { opacity: 0.7 }}>
             <Text variant="caption" color="secondary">{greeting}</Text>
             <View style={styles.appNameRow}>
               <Text variant="title" weight="bold">{profile?.app_name || 'Dashboard'}</Text>
               <Ionicons name="pencil" size={14} color={colors.textSecondary} style={{ marginLeft: 8 }} />
             </View>
-          </TouchableOpacity>
+          </Pressable>
           <View style={styles.headerRight}>
             {isLive ? (
               <View style={[styles.badge, { backgroundColor: colors.success + '20' }]}>
@@ -317,7 +303,7 @@ export default function DashboardScreen() {
             />
           </Card>
         ) : (
-          <TouchableOpacity onPress={() => router.push('/data-sources')}>
+          <Pressable onPress={() => router.push('/data-sources')} style={({ pressed }) => pressed && { opacity: 0.7 }}>
             <Card style={styles.sourcesBar}>
               <View style={styles.sourcesContent}>
                 <View style={styles.sourceIcons}>
@@ -353,7 +339,7 @@ export default function DashboardScreen() {
                 <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
               </View>
             </Card>
-          </TouchableOpacity>
+          </Pressable>
         )}
 
         {/* Today's Stats */}
@@ -407,31 +393,31 @@ export default function DashboardScreen() {
         {/* Chart */}
         <Card style={styles.chartCard}>
           <View style={styles.chartHeader}>
-            <Text variant="label" weight="semibold">New Customers (Last 30 Days)</Text>
+            <Text variant="label" weight="semibold">New Customers (Last 28 Days)</Text>
             <Text variant="caption" color="secondary">{stats.newCustomers.toLocaleString()} total</Text>
           </View>
           <LineChart data={chartData} labels={chartLabels} height={200} />
         </Card>
 
-        {/* 30-Day Stats */}
+        {/* 28-Day Stats */}
         <View style={styles.statsRow}>
           <StatCard
             title="New Customers"
             value={stats.newCustomers}
-            subtitle="last 30 days"
+            subtitle="last 28 days"
             icon="person-add-outline"
           />
           <StatCard
             title="Active Users"
             value={stats.activeUsers}
-            subtitle="last 30 days"
+            subtitle="last 28 days"
             icon="people-outline"
           />
         </View>
 
-        {/* 30-Day Overview */}
+        {/* 28-Day Overview */}
         <Card style={styles.overviewCard}>
-          <Text variant="label" weight="semibold" style={styles.overviewTitle}>30-DAY OVERVIEW</Text>
+          <Text variant="label" weight="semibold" style={styles.overviewTitle}>28-DAY OVERVIEW</Text>
           <View style={styles.overviewRow}>
             <View style={styles.overviewItem}>
               <Text variant="caption" color="secondary">New Customers</Text>
@@ -450,9 +436,9 @@ export default function DashboardScreen() {
           <Card style={styles.sourceSummaryCard}>
             <View style={styles.sourceSummaryHeader}>
               <Text variant="label" weight="semibold">Data Sources</Text>
-              <TouchableOpacity onPress={() => router.push('/data-sources')}>
+              <Pressable onPress={() => router.push('/data-sources')} style={({ pressed }) => pressed && { opacity: 0.7 }}>
                 <Text variant="caption" color="accent">Manage</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
             {connectedSources.map((source) => {
               const info = DATA_SOURCE_INFO[source.provider];

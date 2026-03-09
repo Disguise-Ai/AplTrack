@@ -509,6 +509,60 @@ export default function DataSourcesScreen() {
                     </View>
                   )}
 
+                  {selectedSource.id === 'superwall' && (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
+                      <Ionicons name="link" size={20} color={colors.primary} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text variant="caption" weight="semibold" style={{ marginBottom: 4 }}>
+                          Webhook Setup Required
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          Add this webhook URL in your Superwall dashboard under Settings → Webhooks:
+                        </Text>
+                        <Text variant="caption" weight="semibold" style={{ marginTop: 4 }} selectable>
+                          https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/superwall-webhook
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {selectedSource.id === 'revenuecat' && (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
+                      <Ionicons name="link" size={20} color={colors.primary} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text variant="caption" weight="semibold" style={{ marginBottom: 4 }}>
+                          Webhook Setup (Optional)
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          For real-time notifications, add this webhook URL in RevenueCat under Settings → Webhooks:
+                        </Text>
+                        <Text variant="caption" weight="semibold" style={{ marginTop: 4 }} selectable>
+                          https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/revenuecat-webhook
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {selectedSource.id === 'stripe' && (
+                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
+                      <Ionicons name="link" size={20} color={colors.primary} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text variant="caption" weight="semibold" style={{ marginBottom: 4 }}>
+                          Webhook Setup (For Real-Time Alerts)
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          Add this webhook URL in Stripe Dashboard → Developers → Webhooks → Add endpoint:
+                        </Text>
+                        <Text variant="caption" weight="semibold" style={{ marginTop: 4 }} selectable>
+                          https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/stripe-webhook
+                        </Text>
+                        <Text variant="caption" color="secondary" style={{ marginTop: 8 }}>
+                          Select events: charge.succeeded, charge.refunded, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted, invoice.paid
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
                   <View style={styles.form}>
                     {selectedSource.fields.map((field, index) => (
                       <Input

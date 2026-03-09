@@ -15,9 +15,7 @@ async function sendPushNotification(supabase: any, userId: string, type: string,
       .eq('id', userId)
       .single();
 
-    if (!profile?.push_token) {
-      return;
-    }
+    if (!profile?.push_token) return;
 
     let notification = { title: 'Statly', body: 'You have a new notification', sound: 'default' };
 
@@ -47,9 +45,15 @@ async function sendPushNotification(supabase: any, userId: string, type: string,
         body: `A subscription was renewed! ${amount}`.trim(),
         sound: 'new_purchase.caf'
       };
+    } else if (type === 'trial_started') {
+      notification = {
+        title: '🆓 New Trial Started!',
+        body: `${profile.app_name || 'Your app'} has a new trial user!`,
+        sound: 'new_download.caf'
+      };
     }
 
-    const result = await fetch('https://exp.host/--/api/v2/push/send', {
+    await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -61,10 +65,8 @@ async function sendPushNotification(supabase: any, userId: string, type: string,
         badge: 1,
       }),
     });
-
-    const response = await result.json();
   } catch (error) {
-    // Push notification failed
+    // Push notification failed silently
   }
 }
 
@@ -82,198 +84,236 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Log the webhook event
-    console.log("RevenueCat webhook received:", event.type, JSON.stringify(event));
-
-    // Get the event type and project info
+    // Superwall webhook structure:
+    // { object: "event", type: "initial_purchase", projectId, applicationId, timestamp, data: {...} }
     const eventType = event.type;
-    const appUserId = event.app_user_id;
-    const productId = event.product_id;
-    const eventProjectId = event.app_id || event.project_id; // RevenueCat sends app_id
-    const price = event.price || event.price_in_purchased_currency || 0;
-    const priceNum = typeof price === 'number' ? price : parseFloat(price) || 0;
+    const eventData = event.data || {};
+    const projectId = event.projectId?.toString() || event.applicationId?.toString();
 
-    console.log(`[Webhook] Event: ${eventType}, Project: ${eventProjectId}, Product: ${productId}`);
+    // Extract key metrics from Superwall payload
+    const price = eventData.price || 0;
+    const proceeds = eventData.proceeds || 0;
+    const productId = eventData.productId;
+    const store = eventData.store; // APP_STORE, PLAY_STORE, or STRIPE
+    const periodType = eventData.periodType; // TRIAL, INTRO, or NORMAL
+    const isTrialConversion = eventData.isTrialConversion || false;
+    const bundleId = eventData.bundleId;
 
-    // Find ALL connected RevenueCat apps
+    // Find connected Superwall apps matching this project/bundle
     const { data: allApps } = await supabase
       .from("connected_apps")
       .select("*, user_id")
-      .eq("provider", "revenuecat")
+      .eq("provider", "superwall")
       .eq("is_active", true);
 
     if (!allApps || allApps.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No connected apps" }),
+        JSON.stringify({ success: true, message: "No connected Superwall apps" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Filter to only apps that match this project (if project ID is provided)
+    // Filter to apps that match this project/bundle
     let apps = allApps;
-    if (eventProjectId) {
+    if (projectId || bundleId) {
       apps = allApps.filter(app => {
         const creds = app.credentials || {};
         const appProjectId = creds.project_id || creds.app_id;
-        // Match if project IDs match, or if no project ID stored (legacy)
-        return !appProjectId || appProjectId === eventProjectId;
+        const appBundleId = creds.bundle_id;
+        return (!appProjectId || appProjectId === projectId) ||
+               (!appBundleId || appBundleId === bundleId);
       });
-      console.log(`[Webhook] Matched ${apps.length} apps for project ${eventProjectId}`);
     }
 
-    // Update metrics based on event type
+    // Process event for each matching app
     for (const app of apps) {
       const userId = app.user_id;
 
-      // Handle purchase events
-      if (eventType === "INITIAL_PURCHASE" || eventType === "NON_RENEWING_PURCHASE") {
-        // Increment revenue
-        const { data: currentMetric } = await supabase
+      // Handle initial purchase (new subscriber or one-time purchase)
+      if (eventType === "initial_purchase" || eventType === "non_renewing_purchase") {
+        // Update revenue
+        const { data: currentRevenue } = await supabase
           .from("realtime_metrics")
           .select("metric_value")
           .eq("app_id", app.id)
-          .eq("provider", "revenuecat")
+          .eq("provider", "superwall")
           .eq("metric_type", "revenue_today")
           .eq("metric_date", today)
           .single();
 
-        const currentRevenue = currentMetric?.metric_value || 0;
-        const newRevenue = currentRevenue + priceNum;
-
         await supabase.from("realtime_metrics").upsert({
           app_id: app.id,
-          provider: "revenuecat",
+          provider: "superwall",
           metric_type: "revenue_today",
-          metric_value: newRevenue,
+          metric_value: (currentRevenue?.metric_value || 0) + proceeds,
           metric_date: today,
-          metadata: { last_event: eventType, product_id: productId },
+          metadata: { last_event: eventType, product_id: productId, store },
         }, { onConflict: "app_id,provider,metric_type,metric_date" });
 
-        // Send push notification for new purchase
+        // Send sale notification
         await sendPushNotification(supabase, userId, 'new_sale', {
-          price: priceNum,
+          price: proceeds,
           product_id: productId
         });
 
-        // If initial purchase, also notify about new subscriber
-        if (eventType === "INITIAL_PURCHASE") {
-          // Increment active subscriptions
+        // If it's a subscription (not one-time), update subscriber count
+        if (eventType === "initial_purchase") {
           const { data: subMetric } = await supabase
             .from("realtime_metrics")
             .select("metric_value")
             .eq("app_id", app.id)
-            .eq("provider", "revenuecat")
+            .eq("provider", "superwall")
             .eq("metric_type", "active_subscriptions")
             .eq("metric_date", today)
             .single();
 
           await supabase.from("realtime_metrics").upsert({
             app_id: app.id,
-            provider: "revenuecat",
+            provider: "superwall",
             metric_type: "active_subscriptions",
             metric_value: (subMetric?.metric_value || 0) + 1,
             metric_date: today,
           }, { onConflict: "app_id,provider,metric_type,metric_date" });
 
-          // Also send new subscriber notification
+          // Check if it's a trial conversion or new subscriber
+          if (isTrialConversion) {
+            // Trial converted to paid
+            const { data: trialMetric } = await supabase
+              .from("realtime_metrics")
+              .select("metric_value")
+              .eq("app_id", app.id)
+              .eq("provider", "superwall")
+              .eq("metric_type", "active_trials")
+              .eq("metric_date", today)
+              .single();
+
+            if ((trialMetric?.metric_value || 0) > 0) {
+              await supabase.from("realtime_metrics").upsert({
+                app_id: app.id,
+                provider: "superwall",
+                metric_type: "active_trials",
+                metric_value: (trialMetric?.metric_value || 0) - 1,
+                metric_date: today,
+              }, { onConflict: "app_id,provider,metric_type,metric_date" });
+            }
+          }
+
+          // Send new subscriber notification
           await sendPushNotification(supabase, userId, 'new_subscriber', {
             product_id: productId
           });
         }
-      }
 
-      // Handle renewal events
-      if (eventType === "RENEWAL") {
-        const { data: currentMetric } = await supabase
-          .from("realtime_metrics")
-          .select("metric_value")
-          .eq("app_id", app.id)
-          .eq("provider", "revenuecat")
-          .eq("metric_type", "revenue_today")
-          .eq("metric_date", today)
-          .single();
-
-        const currentRevenue = currentMetric?.metric_value || 0;
-
-        await supabase.from("realtime_metrics").upsert({
-          app_id: app.id,
-          provider: "revenuecat",
-          metric_type: "revenue_today",
-          metric_value: currentRevenue + priceNum,
-          metric_date: today,
-        }, { onConflict: "app_id,provider,metric_type,metric_date" });
-
-        // Send push notification for renewal
-        await sendPushNotification(supabase, userId, 'renewal', {
-          price: priceNum,
-          product_id: productId
-        });
-      }
-
-      // Handle new customers/downloads
-      if (eventType === "INITIAL_PURCHASE" || eventType === "SUBSCRIBER_ALIAS") {
-        const { data: currentMetric } = await supabase
-          .from("realtime_metrics")
-          .select("metric_value")
-          .eq("app_id", app.id)
-          .eq("provider", "revenuecat")
-          .eq("metric_type", "new_customers")
-          .eq("metric_date", today)
-          .single();
-
-        const currentCount = currentMetric?.metric_value || 0;
-
-        await supabase.from("realtime_metrics").upsert({
-          app_id: app.id,
-          provider: "revenuecat",
-          metric_type: "new_customers",
-          metric_value: currentCount + 1,
-          metric_date: today,
-        }, { onConflict: "app_id,provider,metric_type,metric_date" });
-
-        // Update downloads_today
+        // Update downloads/new customers count
         const { data: dlMetric } = await supabase
           .from("realtime_metrics")
           .select("metric_value")
           .eq("app_id", app.id)
-          .eq("provider", "revenuecat")
+          .eq("provider", "superwall")
           .eq("metric_type", "downloads_today")
           .eq("metric_date", today)
           .single();
 
         await supabase.from("realtime_metrics").upsert({
           app_id: app.id,
-          provider: "revenuecat",
+          provider: "superwall",
           metric_type: "downloads_today",
           metric_value: (dlMetric?.metric_value || 0) + 1,
           metric_date: today,
         }, { onConflict: "app_id,provider,metric_type,metric_date" });
 
-        // Send push notification for new download/customer
         await sendPushNotification(supabase, userId, 'new_download', {});
       }
 
+      // Handle renewal
+      if (eventType === "renewal") {
+        const { data: currentRevenue } = await supabase
+          .from("realtime_metrics")
+          .select("metric_value")
+          .eq("app_id", app.id)
+          .eq("provider", "superwall")
+          .eq("metric_type", "revenue_today")
+          .eq("metric_date", today)
+          .single();
+
+        await supabase.from("realtime_metrics").upsert({
+          app_id: app.id,
+          provider: "superwall",
+          metric_type: "revenue_today",
+          metric_value: (currentRevenue?.metric_value || 0) + proceeds,
+          metric_date: today,
+        }, { onConflict: "app_id,provider,metric_type,metric_date" });
+
+        await sendPushNotification(supabase, userId, 'renewal', {
+          price: proceeds,
+          product_id: productId
+        });
+      }
+
+      // Handle trial start (periodType === "TRIAL" on initial_purchase)
+      if (eventType === "initial_purchase" && periodType === "TRIAL") {
+        const { data: trialMetric } = await supabase
+          .from("realtime_metrics")
+          .select("metric_value")
+          .eq("app_id", app.id)
+          .eq("provider", "superwall")
+          .eq("metric_type", "active_trials")
+          .eq("metric_date", today)
+          .single();
+
+        await supabase.from("realtime_metrics").upsert({
+          app_id: app.id,
+          provider: "superwall",
+          metric_type: "active_trials",
+          metric_value: (trialMetric?.metric_value || 0) + 1,
+          metric_date: today,
+        }, { onConflict: "app_id,provider,metric_type,metric_date" });
+
+        await sendPushNotification(supabase, userId, 'trial_started', {
+          product_id: productId
+        });
+      }
+
       // Handle cancellation
-      if (eventType === "CANCELLATION" || eventType === "EXPIRATION") {
+      if (eventType === "cancellation") {
+        // Note: Don't decrement active_subscriptions here - they're still active until expiration
+        // Just log for analytics
+        await supabase.from("realtime_metrics").upsert({
+          app_id: app.id,
+          provider: "superwall",
+          metric_type: "cancellations_today",
+          metric_value: 1,
+          metric_date: today,
+          metadata: { cancel_reason: eventData.cancelReason },
+        }, { onConflict: "app_id,provider,metric_type,metric_date" });
+      }
+
+      // Handle expiration (subscription actually ended)
+      if (eventType === "expiration") {
         const { data: subMetric } = await supabase
           .from("realtime_metrics")
           .select("metric_value")
           .eq("app_id", app.id)
-          .eq("provider", "revenuecat")
+          .eq("provider", "superwall")
           .eq("metric_type", "active_subscriptions")
           .eq("metric_date", today)
           .single();
 
-        const currentSubs = subMetric?.metric_value || 0;
-        if (currentSubs > 0) {
+        if ((subMetric?.metric_value || 0) > 0) {
           await supabase.from("realtime_metrics").upsert({
             app_id: app.id,
-            provider: "revenuecat",
+            provider: "superwall",
             metric_type: "active_subscriptions",
-            metric_value: currentSubs - 1,
+            metric_value: (subMetric?.metric_value || 0) - 1,
             metric_date: today,
           }, { onConflict: "app_id,provider,metric_type,metric_date" });
         }
+      }
+
+      // Handle uncancellation (user reactivated)
+      if (eventType === "uncancellation") {
+        // Subscription was cancelled but user reactivated before expiration
+        // No metric change needed, just log
       }
 
       // Update last sync time
@@ -288,7 +328,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e: any) {
-    console.error("Webhook error:", e);
+    console.error("Superwall webhook error:", e);
     return new Response(
       JSON.stringify({ success: false, error: e.message }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme, LogBox } from 'react-native';
@@ -10,6 +10,7 @@ import { Colors } from '@/constants/Colors';
 import { syncAllDataSources } from '@/lib/api';
 import { configureSuperwall, identifySuperwallUser } from '@/lib/superwall';
 import { registerForPushNotifications, savePushToken, addNotificationReceivedListener, addNotificationResponseReceivedListener, clearBadgeCount } from '@/lib/notifications';
+import { triggerRefresh } from '@/lib/refreshTrigger';
 
 // Ignore RevenueCat configuration warnings (expected during development)
 LogBox.ignoreLogs([
@@ -53,9 +54,15 @@ export default function RootLayout() {
     };
     triggerBackgroundSync();
 
-    // Set up notification listeners
+    // Set up notification listeners - refresh data when notification received
     const notificationReceivedSub = addNotificationReceivedListener((notification) => {
-      console.log('[App] Notification received:', notification);
+      const data = notification.request.content.data;
+
+      // When we receive a sale or download notification, trigger immediate data refresh
+      if (data?.type === 'new_sale' || data?.type === 'new_download' || data?.type === 'new_subscriber' || data?.type === 'renewal') {
+        // Trigger refresh so dashboard reloads data from database (webhook already updated it)
+        triggerRefresh();
+      }
     });
 
     const notificationResponseSub = addNotificationResponseReceivedListener((response) => {

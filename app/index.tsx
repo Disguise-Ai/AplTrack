@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, useColorScheme, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import { Text } from '@/components/ui/Text';
 import { Colors } from '@/constants/Colors';
@@ -15,27 +14,25 @@ export default function Index() {
   useEffect(() => {
     if (!initialized) return;
 
-    // Add a small delay for smooth transition
-    const timer = setTimeout(() => {
-      if (isAuthenticated) {
-        if (needsOnboarding) {
-          router.replace('/(onboarding)/company');
-        } else {
-          router.replace('/(tabs)/dashboard?refresh=true');
-        }
+    // Navigate immediately - no artificial delay
+    if (isAuthenticated) {
+      if (needsOnboarding) {
+        router.replace('/(onboarding)/company');
       } else {
-        router.replace('/(auth)/welcome');
+        router.replace('/(tabs)/dashboard?refresh=true');
       }
-    }, 300);
-
-    return () => clearTimeout(timer);
+    } else {
+      router.replace('/(auth)/welcome');
+    }
   }, [isAuthenticated, needsOnboarding, initialized]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
-        <Ionicons name="analytics" size={40} color="white" />
-      </View>
+      <Image
+        source={require('@/assets/logo.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
       <Text variant="title" weight="bold" style={styles.appName}>Statly</Text>
       <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
     </View>
@@ -44,12 +41,9 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logo: {
+    width: 100,
+    height: 100,
     marginBottom: 16,
   },
   appName: { marginBottom: 24 },

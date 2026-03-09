@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
-import { updateWidgetData, reloadWidgets } from '@/lib/widgetData';
 import type { ConnectedApp, AnalyticsSnapshot, AttributionData } from '@/lib/supabase';
 
 // Get today's date in EST timezone
@@ -60,8 +59,8 @@ export function useAnalytics() {
 
     const today = getTodayEST();
     const weekStart = getDaysAgoEST(6);
+    const twentyEightDaysAgo = getDaysAgoEST(27); // For chart data (matches RevenueCat's 28-day window)
 
-    console.log(`[useAnalytics] Loading metrics for today=${today}, weekStart=${weekStart}`);
 
     try {
       // Get user's connected apps
@@ -72,7 +71,6 @@ export function useAnalytics() {
         .eq('is_active', true);
 
       if (!apps?.length) {
-        console.log('[useAnalytics] No connected apps');
         setLiveMetrics({
           downloadsToday: 0,
           revenueToday: 0,
@@ -85,27 +83,21 @@ export function useAnalytics() {
           revenue30d: 0,
           activeUsers30d: 0,
         });
-        setState(prev => ({ ...prev, apps: [], loading: false }));
+        setState(prev => ({ ...prev, apps: [], analytics: [], loading: false }));
         return;
       }
 
       const appIds = apps.map(a => a.id);
-      console.log(`[useAnalytics] Found ${appIds.length} apps`);
 
-      // Get ALL metrics from last 7 days in ONE query
+      // Get ALL metrics from last 28 days for chart data + weekly stats (matches RevenueCat)
       const { data: metrics, error } = await supabase
         .from('realtime_metrics')
         .select('metric_type, metric_value, metric_date')
         .in('app_id', appIds)
-        .gte('metric_date', weekStart)
+        .gte('metric_date', twentyEightDaysAgo)
         .order('metric_date', { ascending: false });
 
-      if (error) {
-        console.error('[useAnalytics] Query error:', error);
-        return;
-      }
-
-      console.log(`[useAnalytics] Got ${metrics?.length || 0} metric rows`);
+      if (error) return;
 
       // Process metrics - SIMPLE logic
       let downloadsToday = 0;
@@ -149,15 +141,21 @@ export function useAnalytics() {
           if (metric_type === 'active_subscriptions') activeSubscriptions = metric_value;
           if (metric_type === 'active_trials') activeTrials = metric_value;
           if (metric_type === 'mrr') mrr = metric_value;
-          if (metric_type === 'new_customers_30d' || metric_type === 'new_customers_28d' || metric_type === 'new_customers') newCustomers30d = metric_value;
-          if (metric_type === 'revenue_30d' || metric_type === 'revenue_28d' || metric_type === 'revenue') revenue30d = metric_value;
+          // 28-day rolling totals from RevenueCat (also accept legacy 30d names)
+          if (metric_type === 'new_customers_28d' || metric_type === 'new_customers_30d' || metric_type === 'new_customers') newCustomers30d = metric_value;
+          if (metric_type === 'revenue_28d' || metric_type === 'revenue_30d' || metric_type === 'revenue') revenue30d = metric_value;
           if (metric_type === 'active_users') activeUsers30d = metric_value;
         }
       }
 
-      // Sum weekly totals
-      const downloadsWeek = Object.values(dailyDownloads).reduce((sum, val) => sum + val, 0);
-      const revenueWeek = Object.values(dailyRevenue).reduce((sum, val) => sum + val, 0);
+      // Sum weekly totals (only last 7 days)
+      let downloadsWeek = 0;
+      let revenueWeek = 0;
+      for (let i = 0; i < 7; i++) {
+        const dateStr = getDaysAgoEST(i);
+        downloadsWeek += dailyDownloads[dateStr] || 0;
+        revenueWeek += dailyRevenue[dateStr] || 0;
+      }
 
       const newMetrics = {
         downloadsToday,
@@ -172,32 +170,27 @@ export function useAnalytics() {
         activeUsers30d,
       };
 
-      console.log('[useAnalytics] FINAL METRICS:', {
-        'Downloads Today': downloadsToday,
-        'Revenue Today': revenueToday,
-        'Downloads Week': downloadsWeek,
-        'Revenue Week': revenueWeek,
-        'Active Subs': activeSubscriptions,
-        'MRR': mrr,
-        'New Customers 30d': newCustomers30d,
-      });
+      // Build analytics array for chart (last 28 days of daily data)
+      const analyticsData: AnalyticsSnapshot[] = [];
+      for (let i = 27; i >= 0; i--) {
+        const dateStr = getDaysAgoEST(i);
+        analyticsData.push({
+          id: `chart-${dateStr}`,
+          app_id: appIds[0],
+          date: dateStr,
+          downloads: dailyDownloads[dateStr] || 0,
+          revenue: dailyRevenue[dateStr] || 0,
+          active_users: dailyDownloads[dateStr] || 0,
+          ratings_count: 0,
+          created_at: dateStr,
+        });
+      }
 
       setLiveMetrics(newMetrics);
-      setState(prev => ({ ...prev, loading: false }));
-
-      // Update iOS widget with current data
-      console.log('[useAnalytics] Updating widget with:', { downloadsToday, revenueToday, activeSubscriptions });
-      await updateWidgetData({
-        downloadsToday,
-        revenueToday,
-        activeSubscriptions,
-      });
-      // Force widget refresh
-      await reloadWidgets();
+      setState(prev => ({ ...prev, analytics: analyticsData, loading: false }));
 
     } catch (err: any) {
-      console.error('[useAnalytics] Error:', err);
-      setState(prev => ({ ...prev, loading: false, error: err.message }));
+      setState(prev => ({ ...prev, loading: false, error: err?.message }));
     }
   }, [user]);
 
@@ -206,11 +199,9 @@ export function useAnalytics() {
     if (!user) return;
 
     setState(prev => ({ ...prev, syncing: true }));
-    console.log('[syncAnalytics] Starting sync...');
 
     try {
-      // Call the sync edge function
-      const response = await fetch(
+      await fetch(
         'https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/sync-all',
         {
           method: 'POST',
@@ -222,14 +213,9 @@ export function useAnalytics() {
         }
       );
 
-      const data = await response.json();
-      console.log('[syncAnalytics] Sync response:', data.success ? 'OK' : data.error);
-
-      // NOW reload metrics from database
       await loadMetrics();
-
-    } catch (err: any) {
-      console.error('[syncAnalytics] Error:', err);
+    } catch {
+      // Sync failed silently
     } finally {
       setState(prev => ({ ...prev, syncing: false }));
     }
