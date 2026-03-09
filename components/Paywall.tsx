@@ -370,11 +370,11 @@ export function Paywall({
 
           {/* Privacy & Terms Links */}
           <View style={styles.legalLinks}>
-            <TouchableOpacity onPress={() => Linking.openURL('https://github.com/Disguise-Ai/AplTrack/blob/main/PRIVACY.md')}>
+            <TouchableOpacity onPress={() => Linking.openURL('https://getstatly.com/privacy.html')}>
               <Text variant="caption" style={styles.legalLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text variant="caption" color="secondary"> | </Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://github.com/Disguise-Ai/AplTrack/blob/main/TERMS.md')}>
+            <TouchableOpacity onPress={() => Linking.openURL('https://getstatly.com/terms.html')}>
               <Text variant="caption" style={styles.legalLink}>Terms of Use</Text>
             </TouchableOpacity>
           </View>
