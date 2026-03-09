@@ -294,17 +294,17 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text variant="caption" color="secondary" style={styles.sectionTitle}>SUPPORT</Text>
           <Card style={styles.sectionCard} padding={0}>
-            <SettingsItem icon="help-circle-outline" label="Help Center" onPress={() => openLink('https://apltrack.com/help')} external />
-            <SettingsItem icon="mail-outline" label="Contact Us" onPress={() => openLink('mailto:support@apltrack.com')} external />
-            <SettingsItem icon="chatbubble-outline" label="Send Feedback" onPress={() => openLink('https://apltrack.com/feedback')} external />
+            <SettingsItem icon="help-circle-outline" label="Help Center" onPress={() => openLink('https://getstatly.com')} external />
+            <SettingsItem icon="mail-outline" label="Contact Us" onPress={() => openLink('mailto:support@dontpanic.digital')} external />
+            <SettingsItem icon="chatbubble-outline" label="Send Feedback" onPress={() => openLink('mailto:support@dontpanic.digital?subject=Statly%20Feedback')} external />
           </Card>
         </View>
 
         <View style={styles.section}>
           <Text variant="caption" color="secondary" style={styles.sectionTitle}>LEGAL</Text>
           <Card style={styles.sectionCard} padding={0}>
-            <SettingsItem icon="document-text-outline" label="Terms of Service" onPress={() => openLink('https://apltrack.com/terms')} external />
-            <SettingsItem icon="shield-outline" label="Privacy Policy" onPress={() => openLink('https://apltrack.com/privacy')} external />
+            <SettingsItem icon="document-text-outline" label="Terms of Service" onPress={() => openLink('https://getstatly.com/terms.html')} external />
+            <SettingsItem icon="shield-outline" label="Privacy Policy" onPress={() => openLink('https://getstatly.com/privacy.html')} external />
             <SettingsItem icon="refresh-outline" label="Restore Purchases" onPress={handleRestore} />
           </Card>
         </View>
