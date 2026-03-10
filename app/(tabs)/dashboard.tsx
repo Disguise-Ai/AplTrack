@@ -20,7 +20,6 @@ import { onRefreshTriggered } from '@/lib/refreshTrigger';
 const DATA_SOURCE_INFO: Record<string, { name: string; icon: string; color: string }> = {
   revenuecat: { name: 'RevenueCat', icon: '💰', color: '#FF6B6B' },
   stripe: { name: 'Stripe', icon: '💳', color: '#635BFF' },
-  superwall: { name: 'Superwall', icon: '🧱', color: '#6366F1' },
   appsflyer: { name: 'AppsFlyer', icon: '📊', color: '#12CBC4' },
   adjust: { name: 'Adjust', icon: '🎯', color: '#0652DD' },
   mixpanel: { name: 'Mixpanel', icon: '📈', color: '#7C4DFF' },

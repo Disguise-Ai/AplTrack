@@ -65,19 +65,6 @@ const DATA_SOURCES: DataSource[] = [
     ],
   },
   {
-    id: 'superwall',
-    name: 'Superwall',
-    description: 'Paywall A/B testing & optimization',
-    icon: '🧱',
-    color: '#6366F1',
-    dataType: 'Conversions, Paywalls, A/B Tests',
-    speed: 'Real-time',
-    fields: [
-      { key: 'api_key', label: 'API Key', placeholder: 'pk_xxxxxxxxxxxx', secure: true },
-      { key: 'app_id', label: 'App ID', placeholder: 'Your Superwall app ID' },
-    ],
-  },
-  {
     id: 'adapty',
     name: 'Adapty',
     description: 'In-app subscriptions & analytics',
@@ -506,23 +493,6 @@ export default function DataSourcesScreen() {
                       <Text variant="caption" color="secondary" style={{ flex: 1, marginLeft: 8 }}>
                         Enter your new API credentials. For security, existing credentials cannot be viewed.
                       </Text>
-                    </View>
-                  )}
-
-                  {selectedSource.id === 'superwall' && (
-                    <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
-                      <Ionicons name="link" size={20} color={colors.primary} />
-                      <View style={{ flex: 1, marginLeft: 8 }}>
-                        <Text variant="caption" weight="semibold" style={{ marginBottom: 4 }}>
-                          Webhook Setup Required
-                        </Text>
-                        <Text variant="caption" color="secondary">
-                          Add this webhook URL in your Superwall dashboard under Settings → Webhooks:
-                        </Text>
-                        <Text variant="caption" weight="semibold" style={{ marginTop: 4 }} selectable>
-                          https://ortktibcxwsoqvjletlj.supabase.co/functions/v1/superwall-webhook
-                        </Text>
-                      </View>
                     </View>
                   )}
 
